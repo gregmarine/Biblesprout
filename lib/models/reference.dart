@@ -168,6 +168,49 @@ class ReferenceParser {
     return Passage(book: book, ranges: ranges, rawText: input.trim());
   }
 
+  /// Parses one or more references separated by commas or semicolons, e.g.
+  /// `John 3:14-17, Acts 1:3` → two passages.
+  ///
+  /// A comma-separated part that names a book starts a new passage; a part with
+  /// no book (a bare verse/chapter number) continues the previous reference's
+  /// book, so `John 3:16, 18` stays a single John passage — matching [parse].
+  /// Returns an empty list when the input isn't a valid reference list (e.g. a
+  /// search phrase), so callers can fall back to full-text search.
+  static List<Passage> parseAll(String input) {
+    final chunks = <String>[];
+    final buffer = <String>[];
+
+    void flush() {
+      if (buffer.isNotEmpty) {
+        chunks.add(buffer.join(', '));
+        buffer.clear();
+      }
+    }
+
+    for (final part in input.split(RegExp(r'[;,]'))) {
+      final seg = part.trim();
+      if (seg.isEmpty) continue;
+      if (RegExp(r'[A-Za-z]').hasMatch(seg)) {
+        flush(); // a book name begins a new reference
+        buffer.add(seg);
+      } else {
+        // A numeric-only part continues the current book; it can't lead.
+        if (buffer.isEmpty) return const [];
+        buffer.add(seg);
+      }
+    }
+    flush();
+    if (chunks.isEmpty) return const [];
+
+    final passages = <Passage>[];
+    for (final chunk in chunks) {
+      final passage = parse(chunk);
+      if (passage == null) return const []; // any bad chunk ⇒ treat as a search
+      passages.add(passage);
+    }
+    return passages;
+  }
+
   static List<VerseRange>? _parseSpec(int ordinal, String spec) {
     // No colon anywhere → chapter-level ("3", "1-2", "1,3,5").
     if (!spec.contains(':')) {

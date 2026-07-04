@@ -20,9 +20,10 @@ Display Berean Standard Bible text on e-ink with page-flipping and a table of co
   containing a given verse (used by search). Top bar has a back arrow (pop one) and "Contents"
   (jump to library).
 - **Find** (`lib/screens/find_screen.dart`) — one smart input reached from the library header.
-  A valid reference (`John 3:16`, `Gen 1:5-10`, `Psalm 23`) opens the **Passage** view;
-  anything else runs FTS5 search, shown as a paginated list of rows that open the reader on
-  that verse's page.
+  One or more references (`John 3:16`; `Gen 1:5-10`; `John 3:14-17, Acts 1:3`) open the
+  **Passage** view (`ReferenceParser.parseAll` splits comma/semicolon-separated refs across
+  books, resolved in typed order); anything else runs FTS5 search, shown as a paginated list of
+  rows that open the reader on that verse's page.
 - **Passage** (`lib/screens/passage_screen.dart`) — jump-to-passage rendered like the chapter
   reader (not a list): a "John 3" heading, superscript verse numbers, verses flowing together;
   a fresh heading is inserted inline where the passage crosses a chapter/book; paginates if

@@ -52,6 +52,21 @@ void main() {
       expect(hits[2].text, contains('loved the world'));
     });
 
+    test('multiple references resolve across books in typed order', () async {
+      final passages = ReferenceParser.parseAll('John 3:14-17, Acts 1:3');
+      final hits = <VerseHit>[];
+      for (final p in passages) {
+        hits.addAll(await db.versesForPassage(p));
+      }
+      expect(hits.map((h) => h.reference), [
+        'John 3:14',
+        'John 3:15',
+        'John 3:16',
+        'John 3:17',
+        'Acts 1:3',
+      ]);
+    });
+
     test('whole-chapter range returns every verse of Psalm 23', () async {
       final passage = ReferenceParser.parse('Psalm 23')!;
       final hits = await db.versesForPassage(passage);

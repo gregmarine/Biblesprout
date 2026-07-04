@@ -109,4 +109,42 @@ void main() {
       expect(ReferenceParser.parse('John'), isNull);
     });
   });
+
+  group('ReferenceParser.parseAll', () {
+    test('splits references across books', () {
+      final passages = ReferenceParser.parseAll('John 3:14-17, Acts 1:3');
+      expect(passages, hasLength(2));
+      expect(passages[0].book.usfm, 'JHN');
+      expect(passages[0].ranges, [VerseRange.verses(43, 3, 14, 17)]);
+      expect(passages[1].book.usfm, 'ACT');
+      expect(passages[1].ranges, [VerseRange.verse(44, 1, 3)]);
+    });
+
+    test('a numeric part still continues the current book', () {
+      final passages = ReferenceParser.parseAll('John 3:14-16, 18');
+      expect(passages, hasLength(1));
+      expect(passages.single.book.usfm, 'JHN');
+      expect(passages.single.ranges, [
+        VerseRange.verses(43, 3, 14, 16),
+        VerseRange.verse(43, 3, 18),
+      ]);
+    });
+
+    test('semicolons separate references too', () {
+      final passages = ReferenceParser.parseAll('John 3:16; Rom 5:8; 1 John 1:9');
+      expect(passages.map((p) => p.book.usfm), ['JHN', 'ROM', '1JN']);
+    });
+
+    test('a single reference works, preserving typed order', () {
+      final passages = ReferenceParser.parseAll('Acts 1:3, John 3:16');
+      expect(passages.map((p) => p.book.usfm), ['ACT', 'JHN']);
+    });
+
+    test('non-references return empty (so callers search instead)', () {
+      expect(ReferenceParser.parseAll('shepherd'), isEmpty);
+      expect(ReferenceParser.parseAll('love your enemies'), isEmpty);
+      expect(ReferenceParser.parseAll('John 3:16, gibberish'), isEmpty);
+      expect(ReferenceParser.parseAll(''), isEmpty);
+    });
+  });
 }

@@ -56,18 +56,21 @@ class _FindScreenState extends State<FindScreen> {
       _submitted = query;
     });
 
-    // A parseable reference with real verses jumps to the flowing passage view;
-    // anything else is a full-text search shown as a list.
-    final passage = ReferenceParser.parse(query);
-    if (passage != null) {
-      final verses = await widget.bibleDb.versesForPassage(passage);
+    // One or more parseable references (e.g. "John 3:14-17, Acts 1:3") jump to
+    // the flowing passage view; anything else is a full-text search list.
+    final passages = ReferenceParser.parseAll(query);
+    if (passages.isNotEmpty) {
+      final verses = <VerseHit>[];
+      for (final passage in passages) {
+        verses.addAll(await widget.bibleDb.versesForPassage(passage));
+      }
       if (verses.isNotEmpty) {
         if (!mounted) return;
         setState(() => _searching = false);
         await Navigator.of(context).push(
           MaterialPageRoute(
             builder: (_) => PassageScreen(
-              title: passage.format(),
+              title: passages.map((p) => p.format()).join('; '),
               verses: verses,
             ),
           ),
@@ -265,7 +268,7 @@ class _Help extends StatelessWidget {
           ),
           SizedBox(height: 6),
           Text(
-            'John 3:16   ·   Gen 1:5-10   ·   Psalm 23\nJohn 3:14-16,18   ·   1 Cor 13',
+            'John 3:16   ·   Gen 1:5-10   ·   Psalm 23\nJohn 3:14-17, Acts 1:3   ·   1 Cor 13',
             style: TextStyle(
               fontFamily: Eink.fontFamily,
               fontSize: 17,

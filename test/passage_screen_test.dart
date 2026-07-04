@@ -44,4 +44,19 @@ void main() {
     expect(find.text('John 3'), findsOneWidget);
     expect(find.text('John 4'), findsOneWidget);
   });
+
+  testWidgets('renders multiple books, each with its own heading', (tester) async {
+    await tester.pumpWidget(MaterialApp(
+      home: PassageScreen(
+        title: 'John 3:16; Acts 1:3',
+        verses: [
+          _hit('JHN', 3, 16, 'For God so loved the world.'),
+          _hit('ACT', 1, 3, 'After His suffering He presented Himself.'),
+        ],
+      ),
+    ));
+
+    expect(find.text('John 3'), findsOneWidget);
+    expect(find.text('Acts 1'), findsOneWidget);
+  });
 }

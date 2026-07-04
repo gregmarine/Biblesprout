@@ -32,10 +32,11 @@ Display Berean Standard Bible text on e-ink with page-flipping and a table of co
 
 ## Data layer (SQLite)
 
-Content lives in **per-source, read-only** databases (one file per work, e.g. `bsb.bible`);
-user-generated data and the source registry live in a single read-write **global index**,
-`biblesprout.db`. Both use `sqflite_common_ffi` + `sqlite3_flutter_libs` (a bundled SQLite so
-**FTS5 is always available** — the Android system library often lacks it).
+Content lives in **per-source, read-only** databases (one file per work): Bibles as `*.bible`
+(e.g. `bsb.bible`), commentaries as `*.commentary` (e.g. `mhcc.commentary`). User-generated
+data and the source registry live in a single read-write **global index**, `biblesprout.db`.
+All use `sqflite_common_ffi` + `sqlite3_flutter_libs` (a bundled SQLite so **FTS5 is always
+available** — the Android system library often lacks it).
 
 Everything cross-references scripture by a **canonical verse key**: an integer
 `ordinal*1_000_000 + chapter*1_000 + verse` (canon ordinal 1..66). Keys sort in reading order,
@@ -54,6 +55,17 @@ same integer a source does. Books are keyed by **USFM code** (`GEN`…`REV`).
   Roman numerals; `Passage.format()` renders back a tidy canonical string.
 - `lib/data/bible_database.dart` — read-only accessor for a `*.bible` source: rebuilds the
   in-memory `Bible`, plus `search()` (FTS5), `versesInRange()` and `versesForPassage()`.
+- `lib/data/commentary_database.dart` — read-only accessor for a `*.commentary` source
+  (verse-range comment entries): `entriesForVerse()`/`entriesForRange()` by verse-key
+  containment + FTS5 `search()`. **Built but not yet wired into the app/bootstrap** — a source
+  DB + accessor + tests exist; showing commentary in the UI is a follow-up.
+- `tool/build_commentary_db.dart` — dev-time builder for `*.commentary` from CCEL ThML
+  (`dart run tool/build_commentary_db.dart mhcc`). `assets/commentaries/mhcc.xml` (Matthew
+  Henry's Concise, public domain) → `assets/commentaries/mhcc.commentary`. The parser is a
+  document-order state machine keyed on `<scripCom>` markers; it trusts the `<div1>` book
+  heading over `osisRef` (which mis-tags e.g. Jude→Judg) and falls back to whole-chapter prose
+  where a marker is missing (e.g. Psalm 23), giving full 1189/1189-chapter coverage. The
+  Complete commentary (six volumes) can be added under the same tool later.
 - `lib/data/app_database.dart` — the global index (`biblesprout.db`): source registry +
   reading progress (wired), and schema for bookmarks/highlights/notes/cross-links (not yet
   exercised). All annotations address scripture by verse-key spans (`start_key`/`end_key`).

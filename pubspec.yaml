@@ -31,8 +31,15 @@ dependencies:
   flutter:
     sdk: flutter
 
-  # Persists the reader's last-read position across launches.
+  path: ^1.9.1
+  # Locates writable app storage for the copied databases.
+  path_provider: ^2.1.6
+  # Legacy reading-position store; kept for one-time migration into biblesprout.db.
   shared_preferences: ^2.3.2
+  # SQLite via a bundled engine (sqlite3_flutter_libs) so FTS5 is always
+  # available; the system library on Android often lacks it.
+  sqflite_common_ffi: ^2.4.0+3
+  sqlite3_flutter_libs: ^0.6.0+eol
 
 dev_dependencies:
   flutter_test:
@@ -44,6 +51,7 @@ dev_dependencies:
   # package. See that file for information about deactivating specific lint
   # rules and activating additional ones.
   flutter_lints: ^6.0.0
+  sqlite3: ^3.3.4
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec
@@ -54,7 +62,10 @@ flutter:
   uses-material-design: true
 
   assets:
-    - assets/bible/bsb.txt
+    # Pre-built read-only source database (from assets/bible/bsb.txt via
+    # `dart run tool/build_bible_db.dart`). bsb.txt stays in the repo as the
+    # human-editable source of truth but is no longer bundled.
+    - assets/bible/bsb.bible
 
   fonts:
     - family: NotoSerif

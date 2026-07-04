@@ -1,6 +1,11 @@
-import 'package:shared_preferences/shared_preferences.dart';
+import '../data/app_database.dart';
+import '../data/canon.dart';
 
 /// The reader's last location, persisted so the app reopens where it left off.
+///
+/// The reader speaks in `bookIndex` (0-based canonical order); the global index
+/// stores the canonical USFM book code. This store translates between the two,
+/// so the reader/library/chapters screens are unchanged by the move to SQLite.
 class ReadingPosition {
   const ReadingPosition({
     required this.bookIndex,
@@ -16,24 +21,32 @@ class ReadingPosition {
 }
 
 class ReadingPositionStore {
-  static const _kBook = 'pos.bookIndex';
-  static const _kChapter = 'pos.chapterNumber';
-  static const _kPage = 'pos.page';
+  ReadingPositionStore(this._db, this._sourceId);
+
+  final AppDatabase _db;
+
+  /// Which source this position belongs to (e.g. the BSB's `bsb`).
+  final String _sourceId;
 
   Future<ReadingPosition?> load() async {
-    final prefs = await SharedPreferences.getInstance();
-    if (!prefs.containsKey(_kBook)) return null;
+    final p = await _db.progressForSource(_sourceId);
+    if (p == null) return null;
+    final book = Canon.tryUsfm(p.bookUsfm);
+    if (book == null) return null;
     return ReadingPosition(
-      bookIndex: prefs.getInt(_kBook) ?? 0,
-      chapterNumber: prefs.getInt(_kChapter) ?? 1,
-      page: prefs.getInt(_kPage) ?? 0,
+      bookIndex: book.ordinal - 1,
+      chapterNumber: p.chapter,
+      page: p.page,
     );
   }
 
   Future<void> save(ReadingPosition position) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setInt(_kBook, position.bookIndex);
-    await prefs.setInt(_kChapter, position.chapterNumber);
-    await prefs.setInt(_kPage, position.page);
+    final usfm = Canon.byOrdinal(position.bookIndex + 1).usfm;
+    await _db.saveProgress(
+      sourceId: _sourceId,
+      bookUsfm: usfm,
+      chapter: position.chapterNumber,
+      page: position.page,
+    );
   }
 }

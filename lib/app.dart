@@ -30,6 +30,7 @@ class _BiblesproutAppState extends State<BiblesproutApp> {
           final services = snapshot.data!;
           return LibraryScreen(
             bible: services.bible,
+            bibleDb: services.bibleDb,
             store: services.positionStore,
             lastPosition: services.initialPosition,
           );

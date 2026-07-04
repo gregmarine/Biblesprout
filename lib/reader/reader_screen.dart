@@ -16,12 +16,17 @@ class ReaderScreen extends StatefulWidget {
     required this.store,
     required this.start,
     this.startPage = 0,
+    this.startVerse,
   });
 
   final Bible bible;
   final ReadingPositionStore store;
   final ChapterRef start;
   final int startPage;
+
+  /// If set, open on whichever page of the start chapter contains this verse
+  /// (used by search / jump-to-passage). Takes precedence over [startPage].
+  final int? startVerse;
 
   @override
   State<ReaderScreen> createState() => _ReaderScreenState();
@@ -46,6 +51,10 @@ class _ReaderScreenState extends State<ReaderScreen> {
   /// to that chapter's last page.
   bool _pendingLastPage = false;
 
+  /// Set when opening via search/jump: after pagination we jump to the page
+  /// containing this verse number.
+  int? _pendingVerse;
+
   int _turnsSinceRefresh = 0;
   bool _flashing = false;
 
@@ -68,6 +77,7 @@ class _ReaderScreenState extends State<ReaderScreen> {
     super.initState();
     _ref = widget.start;
     _page = widget.startPage;
+    _pendingVerse = widget.startVerse;
 
     const family = Eink.fontFamily;
     _bodyStyle = const TextStyle(
@@ -153,6 +163,17 @@ class _ReaderScreenState extends State<ReaderScreen> {
     if (_pendingLastPage) {
       _page = _pages.length - 1;
       _pendingLastPage = false;
+    }
+    if (_pendingVerse != null) {
+      final target = _pendingVerse!;
+      for (var i = 0; i < _pages.length; i++) {
+        if (_pages[i]
+            .any((a) => a is NumberAtom && a.number == target)) {
+          _page = i;
+          break;
+        }
+      }
+      _pendingVerse = null;
     }
     if (_page >= _pages.length) _page = _pages.length - 1;
     if (_page < 0) _page = 0;

@@ -107,9 +107,17 @@ class BibleDatabase {
   }
 
   /// Full-text search over verse text (FTS5), best matches first.
+  ///
+  /// The query is reduced to word tokens and rebuilt as a safe prefix-AND FTS
+  /// expression — so user punctuation can't cause a syntax error, and searching
+  /// "love" also finds "loved" / "lovely".
   Future<List<VerseHit>> search(String query, {int limit = 100}) async {
-    final trimmed = query.trim();
-    if (trimmed.isEmpty) return const [];
+    final tokens = RegExp(r'[\p{L}\p{N}]+', unicode: true)
+        .allMatches(query.toLowerCase())
+        .map((m) => m[0]!)
+        .toList();
+    if (tokens.isEmpty) return const [];
+    final match = tokens.map((t) => '"$t"*').join(' ');
     final rows = await _db.rawQuery(
       '''
       SELECT v.verse_key, v.usfm, v.chapter, v.verse, v.text
@@ -119,7 +127,7 @@ class BibleDatabase {
       ORDER BY rank
       LIMIT ?
       ''',
-      [trimmed, limit],
+      [match, limit],
     );
     return rows.map(_toHit).toList(growable: false);
   }

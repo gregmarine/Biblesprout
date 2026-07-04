@@ -77,6 +77,22 @@ void main() {
       // Psalm 23:1 is the canonical hit and should rank highly.
       expect(hits.any((h) => h.reference == 'Psalms 23:1'), isTrue);
     });
+
+    test('search is prefix-forgiving and punctuation-safe', () async {
+      List<VerseHit> hits;
+      try {
+        // Prefix: "love" should also match "loved"/"loveth"; punctuation in the
+        // query must not throw an FTS syntax error.
+        hits = await db.search('"love\'s*  (good)');
+      } on DatabaseException catch (e) {
+        if (e.toString().contains('fts5')) {
+          markTestSkipped('FTS5 unavailable in this test SQLite: $e');
+          return;
+        }
+        rethrow;
+      }
+      expect(hits, isNotEmpty);
+    });
   });
 
   group('AppDatabase (global index)', () {

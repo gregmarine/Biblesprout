@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
 
+import '../data/bible_database.dart';
 import '../models/bible.dart';
 import '../reader/reader_screen.dart';
 import '../services/reading_position.dart';
 import '../theme/eink_theme.dart';
 import '../widgets/paged_view.dart';
 import 'chapters_screen.dart';
+import 'find_screen.dart';
 
 /// Home screen: the table of contents. Lists all 66 books grouped by
 /// testament, with a "Continue reading" shortcut to the last-read position.
@@ -17,11 +19,13 @@ class LibraryScreen extends StatefulWidget {
   const LibraryScreen({
     super.key,
     required this.bible,
+    required this.bibleDb,
     required this.store,
     this.lastPosition,
   });
 
   final Bible bible;
+  final BibleDatabase bibleDb;
   final ReadingPositionStore store;
   final ReadingPosition? lastPosition;
 
@@ -52,6 +56,19 @@ class _LibraryScreenState extends State<LibraryScreen> {
           bible: widget.bible,
           store: widget.store,
           book: book,
+        ),
+      ),
+    );
+    await _refreshPosition();
+  }
+
+  Future<void> _openFind(BuildContext context) async {
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => FindScreen(
+          bible: widget.bible,
+          bibleDb: widget.bibleDb,
+          store: widget.store,
         ),
       ),
     );
@@ -138,7 +155,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            const _Header(),
+            _Header(onSearch: () => _openFind(context)),
             if (pos != null)
               _ContinueBanner(
                 label:
@@ -174,35 +191,53 @@ class _TocEntry {
 }
 
 class _Header extends StatelessWidget {
-  const _Header();
+  const _Header({required this.onSearch});
+
+  final VoidCallback onSearch;
 
   @override
   Widget build(BuildContext context) {
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.fromLTRB(20, 18, 20, 14),
+      padding: const EdgeInsets.fromLTRB(20, 14, 8, 12),
       decoration: const BoxDecoration(
         border: Border(bottom: BorderSide(color: Eink.black, width: 2)),
       ),
-      child: const Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          Text(
-            'Biblesprout',
-            style: TextStyle(
-              fontFamily: Eink.fontFamily,
-              fontSize: 30,
-              fontWeight: FontWeight.bold,
-              color: Eink.black,
+          const Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Biblesprout',
+                  style: TextStyle(
+                    fontFamily: Eink.fontFamily,
+                    fontSize: 30,
+                    fontWeight: FontWeight.bold,
+                    color: Eink.black,
+                  ),
+                ),
+                SizedBox(height: 2),
+                Text(
+                  'Berean Standard Bible',
+                  style: TextStyle(
+                    fontFamily: Eink.fontFamily,
+                    fontSize: 15,
+                    color: Eink.rule,
+                  ),
+                ),
+              ],
             ),
           ),
-          SizedBox(height: 2),
-          Text(
-            'Berean Standard Bible',
-            style: TextStyle(
-              fontFamily: Eink.fontFamily,
-              fontSize: 15,
-              color: Eink.rule,
+          GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: onSearch,
+            child: const SizedBox(
+              width: 56,
+              height: 56,
+              child: Icon(Icons.search, size: 30, color: Eink.black),
             ),
           ),
         ],

@@ -16,7 +16,12 @@ Display Berean Standard Bible text on e-ink with page-flipping and a table of co
   on a fresh page with a book/chapter heading; paragraph flow with superscript verse numbers;
   page turns via swipe **and** left/right tap thirds (center third opens Contents); flows
   across chapter/book boundaries; instant swaps with a black full-refresh flash every 6 turns
-  to clear e-ink ghosting; remembers last position.
+  to clear e-ink ghosting; remembers last position. Optional `startVerse` opens on the page
+  containing a given verse (used by Find).
+- **Find** (`lib/screens/find_screen.dart`) — one smart input reached from the library header.
+  A valid reference (`John 3:16`, `Gen 1:5-10`, `Psalm 23`) resolves to its verses
+  (jump-to-passage); anything else runs FTS5 search. Results paginate (`PagedView`) and each
+  row opens the reader on that verse's page.
 
 ## Data layer (SQLite)
 

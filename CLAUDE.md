@@ -32,6 +32,10 @@ Display Berean Standard Bible text on e-ink with page-flipping and a table of co
 - `lib/services/reading_position.dart` — last position via `shared_preferences`.
 - `lib/theme/eink_theme.dart` — pure black on white, no ripples, no route transitions.
 
+E-ink design rules for **all** screens/dialogs/buttons/widgets (color, motion,
+refresh, dialogs, touch targets) live in `docs/eink-constraints.md`. Read it
+before building new UI; the theme enforces only part of it.
+
 The BSB text is public domain (bereanbible.com). Refresh it from https://bereanbible.com/bsb.txt.
 
 ## Running on the BOOX (device-specific gotchas)

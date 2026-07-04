@@ -266,7 +266,8 @@ class _ReaderScreenState extends State<ReaderScreen> {
                       height: _headerHeight,
                       child: _TopBar(
                         title: '${_book.name} ${_chapter.number}',
-                        onTap: _openToc,
+                        onBack: () => Navigator.of(context).pop(),
+                        onContents: _openToc,
                       ),
                     ),
                     SizedBox(
@@ -363,28 +364,42 @@ class _ReaderScreenState extends State<ReaderScreen> {
 }
 
 class _TopBar extends StatelessWidget {
-  const _TopBar({required this.title, required this.onTap});
+  const _TopBar({
+    required this.title,
+    required this.onBack,
+    required this.onContents,
+  });
 
   final String title;
-  final VoidCallback onTap;
+  final VoidCallback onBack;
+  final VoidCallback onContents;
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-        decoration: const BoxDecoration(
-          border: Border(bottom: BorderSide(color: Eink.rule)),
-        ),
-        child: Row(
-          children: [
-            const Icon(Icons.menu_book_outlined, size: 20, color: Eink.black),
-            const SizedBox(width: 10),
-            Expanded(
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+      decoration: const BoxDecoration(
+        border: Border(bottom: BorderSide(color: Eink.rule)),
+      ),
+      child: Row(
+        children: [
+          GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: onBack,
+            child: const Padding(
+              padding: EdgeInsets.all(8),
+              child: Icon(Icons.arrow_back, size: 24, color: Eink.black),
+            ),
+          ),
+          const SizedBox(width: 6),
+          Expanded(
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: onContents,
               child: Text(
                 title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
                 style: const TextStyle(
                   fontFamily: Eink.fontFamily,
                   fontSize: 18,
@@ -393,16 +408,23 @@ class _TopBar extends StatelessWidget {
                 ),
               ),
             ),
-            const Text(
-              'Contents',
-              style: TextStyle(
-                fontFamily: Eink.fontFamily,
-                fontSize: 14,
-                color: Eink.rule,
+          ),
+          GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: onContents,
+            child: const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              child: Text(
+                'Contents',
+                style: TextStyle(
+                  fontFamily: Eink.fontFamily,
+                  fontSize: 14,
+                  color: Eink.rule,
+                ),
               ),
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }

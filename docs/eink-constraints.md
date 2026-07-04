@@ -82,6 +82,11 @@ any new widget.
   tap the left/right screen thirds, to turn pages; center third opens Contents;
   tapping the top bar opens Contents. New reading surfaces should reuse these,
   not introduce competing gestures.
+- **Full-screen: bring your own Back.** The app hides the Android status and nav
+  bars (`SystemUiMode.immersiveSticky`), so there is no system Back button. Every
+  pushed screen **must** carry its own on-screen back control (a top-bar
+  `arrow_back`, ~44px target) — the reader, passage, chapters, and find screens
+  all do. A root screen (the library) needs none.
 
 ## 6. Dialogs & overlays
 
@@ -115,6 +120,7 @@ E-ink has no cheap scrim or blur, so the LCD-style floating modal is wrong here.
 - [ ] Touch targets large (~72px for primary actions) and result-obvious?
 - [ ] Dialogs are full-screen/bordered panels, not floating scrimmed modals?
 - [ ] Long-lived paging surfaces flash a full refresh every N turns?
+- [ ] Pushed screen has its own on-screen Back (no system nav bar)?
 
 When in doubt: **would this look right printed on paper, and can the panel draw it
 in one clean refresh?** If not, redesign it.

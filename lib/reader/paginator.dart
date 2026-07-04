@@ -81,6 +81,78 @@ class Paginator {
     return spans;
   }
 
+  /// Rendered height of [count] atoms starting at [start], measured exactly as
+  /// they render (same strut + scaler) so callers can pack their own pages.
+  static double measureHeight({
+    required List<Atom> atoms,
+    required int start,
+    required int count,
+    required TextStyle bodyStyle,
+    required TextStyle numberStyle,
+    required double width,
+    required TextScaler textScaler,
+  }) {
+    final tp = TextPainter(
+      text: TextSpan(
+        style: bodyStyle,
+        children: measureSpans(atoms.sublist(start, start + count), numberStyle),
+      ),
+      strutStyle: strutFor(bodyStyle),
+      textScaler: textScaler,
+      textDirection: TextDirection.ltr,
+    )..layout(maxWidth: width);
+    final h = tp.height;
+    tp.dispose();
+    return h;
+  }
+
+  /// The largest number of atoms from [start] whose height fits [maxHeight], or
+  /// 0 if not even one atom fits (so a caller can move to a fresh page).
+  static int fitCount({
+    required List<Atom> atoms,
+    required int start,
+    required double maxHeight,
+    required TextStyle bodyStyle,
+    required TextStyle numberStyle,
+    required double width,
+    required TextScaler textScaler,
+  }) {
+    final remaining = atoms.length - start;
+    if (remaining <= 0) return 0;
+    double h(int c) => measureHeight(
+          atoms: atoms,
+          start: start,
+          count: c,
+          bodyStyle: bodyStyle,
+          numberStyle: numberStyle,
+          width: width,
+          textScaler: textScaler,
+        );
+    if (h(1) > maxHeight) return 0;
+
+    var lo = 1;
+    var hi = 1;
+    while (hi < remaining && h(hi) <= maxHeight) {
+      lo = hi;
+      hi *= 2;
+    }
+    if (hi > remaining) hi = remaining;
+
+    var best = lo;
+    var low = lo;
+    var high = hi;
+    while (low <= high) {
+      final mid = (low + high) ~/ 2;
+      if (h(mid) <= maxHeight) {
+        best = mid;
+        low = mid + 1;
+      } else {
+        high = mid - 1;
+      }
+    }
+    return best;
+  }
+
   /// Splits [atoms] into pages that each fit within the given heights.
   ///
   /// [firstPageHeight] is usually smaller than [otherPageHeight] because the

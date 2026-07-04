@@ -17,11 +17,17 @@ Display Berean Standard Bible text on e-ink with page-flipping and a table of co
   page turns via swipe **and** left/right tap thirds (center third opens Contents); flows
   across chapter/book boundaries; instant swaps with a black full-refresh flash every 6 turns
   to clear e-ink ghosting; remembers last position. Optional `startVerse` opens on the page
-  containing a given verse (used by Find).
+  containing a given verse (used by search). Top bar has a back arrow (pop one) and "Contents"
+  (jump to library).
 - **Find** (`lib/screens/find_screen.dart`) — one smart input reached from the library header.
-  A valid reference (`John 3:16`, `Gen 1:5-10`, `Psalm 23`) resolves to its verses
-  (jump-to-passage); anything else runs FTS5 search. Results paginate (`PagedView`) and each
-  row opens the reader on that verse's page.
+  A valid reference (`John 3:16`, `Gen 1:5-10`, `Psalm 23`) opens the **Passage** view;
+  anything else runs FTS5 search, shown as a paginated list of rows that open the reader on
+  that verse's page.
+- **Passage** (`lib/screens/passage_screen.dart`) — jump-to-passage rendered like the chapter
+  reader (not a list): a "John 3" heading, superscript verse numbers, verses flowing together;
+  a fresh heading is inserted inline where the passage crosses a chapter/book; paginates if
+  long. `lib/reader/passage_paginator.dart` packs heading + text blocks into pages, reusing
+  `Paginator.fitCount`/`measureHeight` so heights match the reader.
 
 ## Data layer (SQLite)
 
@@ -61,6 +67,10 @@ same integer a source does. Books are keyed by **USFM code** (`GEN`…`REV`).
 - `lib/services/reading_position.dart` — the reader's last position, backed by
   `biblesprout.db` (translates the reader's `bookIndex` ↔ canonical USFM code).
 - `lib/theme/eink_theme.dart` — pure black on white, no ripples, no route transitions.
+
+The app runs **full-screen immersive** (`SystemUiMode.immersiveSticky` in `main.dart`): no
+Android status or nav bar. Because there is no system Back, **every pushed screen must provide
+its own on-screen back control** (see the reader/passage/chapters/find top bars).
 
 E-ink design rules for **all** screens/dialogs/buttons/widgets (color, motion,
 refresh, dialogs, touch targets) live in `docs/eink-constraints.md`. Read it

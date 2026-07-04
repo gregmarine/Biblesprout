@@ -8,6 +8,7 @@ import '../reader/reader_screen.dart';
 import '../services/reading_position.dart';
 import '../theme/eink_theme.dart';
 import '../widgets/paged_view.dart';
+import 'passage_screen.dart';
 
 /// One smart input for both jumping and searching.
 ///
@@ -38,9 +39,6 @@ class _FindScreenState extends State<FindScreen> {
   bool _searched = false;
   bool _searching = false;
   String _submitted = '';
-
-  /// Non-null when the query parsed as a reference (drives the results header).
-  Passage? _passage;
   List<VerseHit> _results = const [];
 
   @override
@@ -58,22 +56,29 @@ class _FindScreenState extends State<FindScreen> {
       _submitted = query;
     });
 
-    Passage? passage = ReferenceParser.parse(query);
-    List<VerseHit> results;
+    // A parseable reference with real verses jumps to the flowing passage view;
+    // anything else is a full-text search shown as a list.
+    final passage = ReferenceParser.parse(query);
     if (passage != null) {
-      results = await widget.bibleDb.versesForPassage(passage);
-      if (results.isEmpty) {
-        // Parsed but nothing there (e.g. John 99:1) — fall back to search.
-        passage = null;
-        results = await widget.bibleDb.search(query);
+      final verses = await widget.bibleDb.versesForPassage(passage);
+      if (verses.isNotEmpty) {
+        if (!mounted) return;
+        setState(() => _searching = false);
+        await Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (_) => PassageScreen(
+              title: passage.format(),
+              verses: verses,
+            ),
+          ),
+        );
+        return;
       }
-    } else {
-      results = await widget.bibleDb.search(query);
     }
 
+    final results = await widget.bibleDb.search(query);
     if (!mounted) return;
     setState(() {
-      _passage = passage;
       _results = results;
       _searching = false;
     });
@@ -161,7 +166,6 @@ class _FindScreenState extends State<FindScreen> {
   }
 
   String _summary() {
-    if (_passage != null) return _passage!.format();
     final n = _results.length;
     return '$n ${n == 1 ? 'result' : 'results'} for “$_submitted”';
   }

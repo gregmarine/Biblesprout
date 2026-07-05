@@ -44,14 +44,40 @@ engine must bundle it (the Android system SQLite often lacks FTS5).
 The built `.bible`/`.commentary` DBs in `data/` are the same artifacts the Flutter app
 bundles; the native app can consume them directly rather than rebuilding from source.
 
-## Native Android notes
+## Native Android (`apps/biblesprout_android/`)
 
-_TODO: fill in as the native app takes shape — package id, min SDK, UI toolkit, how the
-prebuilt `data/` DBs are bundled/opened, and the BOOX build/install/screenshot recipe._
+Stack mirrors `apps/notesprout_android` so the two build identically: Kotlin 2.2.20, AGP
+8.11.1, **Views + ViewBinding** (not Compose), **minSdk 29 / targetSdk 35 / compileSdk 35**,
+JDK 17 (temurin), arm64-v8a only. Data layer is **Room** (2.7, KSP) over **SQLCipher**
+(`net.zetetic:sqlcipher-android`) — the same engine as Notesprout. The read-only Bible/
+commentary DBs are opened **plaintext** (empty password); SQLCipher's amalgamation bundles
+**FTS5**, which the BOOX's system SQLite can't be assumed to have. `BiblesproutApplication`
+`System.loadLibrary("sqlcipher")` once at startup. (FTS5-on-device is verified — a scaffold
+smoke test in `MainActivity` runs an in-memory FTS5 query.) The Onyx BOOX SDK is **not** a
+dependency yet; add `onyxsdk-device` when wiring e-ink refresh control.
 
-The whole app runs full-screen immersive with no system Back on the BOOX, so every screen
-must provide its own on-screen back control (a constraint the Flutter version already
-follows; carry it forward).
+`applicationId` is `com.symmetricalpalmtree.biblesprout` (replaces the Flutter app); the
+**debug** build appends `.dev`. The whole app runs full-screen immersive
+(`WindowInsetsControllerCompat.hide(systemBars)`), so there is no system Back — every screen
+must carry its own on-screen back control (carry this constraint forward from Flutter).
+
+**Build / install / launch on the BOOX Go 6 (`DAF86F61`):**
+```sh
+export PATH="$PATH:/Users/gregmarine/development/android-sdk/platform-tools"
+cd apps/biblesprout_android
+./gradlew :app:assembleDebug
+adb -s DAF86F61 install -r app/build/outputs/apk/debug/app-debug.apk
+# A FRESH install lands disabled/stopped on this BOOX (enabled=3); enable it ONCE:
+adb -s DAF86F61 shell pm enable com.symmetricalpalmtree.biblesprout.dev
+adb -s DAF86F61 shell monkey -p com.symmetricalpalmtree.biblesprout.dev 1   # launch
+```
+- `am start -n <pkg>/<cls>` fails with a **bogus "class does not exist"** on this BOOX (same
+  quirk the Flutter app hit) — use `monkey` to launch, never `am start`.
+- Fresh installs need the one-time `pm enable <pkg>` above or `monkey`/`am` report "No
+  activities found to run". Component-level `pm enable <pkg>/<cls>` throws SecurityException
+  (shell can't set component state) — the package-level enable is what's needed.
+- Screenshot: `adb -s DAF86F61 shell screencap -p /sdcard/s.png && adb -s DAF86F61 pull /sdcard/s.png s.png`
+  (piping `screencap` over `exec-out` can emit an error string on BOOX).
 
 ## BOOX device gotchas (device, not framework)
 

@@ -1,0 +1,74 @@
+plugins {
+    id("com.android.application")
+    id("org.jetbrains.kotlin.android")
+    id("com.google.devtools.ksp")
+}
+
+android {
+    namespace = "com.symmetricalpalmtree.biblesprout"
+    compileSdk = 35
+
+    defaultConfig {
+        // Reuses the Flutter app's application id — this build replaces it on device.
+        applicationId = "com.symmetricalpalmtree.biblesprout"
+        minSdk = 29
+        targetSdk = 35
+        versionCode = 1
+        versionName = "1.0"
+
+        ndk {
+            // The only target devices (BOOX Go 6, later Supernote) are 64-bit ARM;
+            // shipping just arm64-v8a drops unused ABIs and their native libs.
+            abiFilters += "arm64-v8a"
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+
+    kotlinOptions {
+        jvmTarget = "17"
+    }
+
+    buildFeatures {
+        viewBinding = true
+        buildConfig = true
+    }
+
+    buildTypes {
+        debug {
+            // Lets the debug build sit alongside a release install if needed.
+            applicationIdSuffix = ".dev"
+            versionNameSuffix = "-dev"
+        }
+        release {
+            isMinifyEnabled = false
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro",
+            )
+        }
+    }
+}
+
+dependencies {
+    implementation("androidx.core:core-ktx:1.13.1")
+    implementation("androidx.appcompat:appcompat:1.7.0")
+
+    // Room over SQLCipher — same data stack as notesprout_android. Read-only Bible
+    // and commentary DBs are opened plaintext (no key); SQLCipher's bundled SQLite
+    // amalgamation includes FTS5, which the Android system library often lacks.
+    implementation("androidx.room:room-runtime:2.7.0")
+    implementation("androidx.room:room-ktx:2.7.0")
+    ksp("androidx.room:room-compiler:2.7.0")
+    implementation("net.zetetic:sqlcipher-android:4.6.1")
+    implementation("androidx.sqlite:sqlite:2.4.0")
+
+    // Coroutines for off-main-thread DB work; lifecycleScope for UI.
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
+    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7")
+
+    testImplementation("junit:junit:4.13.2")
+}

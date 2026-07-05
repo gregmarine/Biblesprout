@@ -5,19 +5,29 @@ Native Android port of Biblesprout. Replaces the Flutter implementation kept (fr
 
 ## Status
 
-Scaffolding not yet started. Decisions to make before generating the project:
+**Scaffold up and running on the BOOX Go 6.** Empty `MainActivity` builds, installs, launches
+full-screen immersive, and a smoke test confirms SQLCipher's bundled **FTS5** works on-device.
+Next: port the reader/library UI and wire the `../../data/` content DBs through Room.
 
-- **UI toolkit** — Jetpack Compose vs. Views.
-- **Package id** — the Flutter app uses `com.symmetricalpalmtree.biblesprout`. Two apps
-  can't share that id on one device at once, so during parallel install this app may need a
-  temporary suffix (e.g. `.native`).
-- **Min SDK** — driven by the BOOX Go 6's Android version.
-- **SQLite / FTS5** — the reader relies on FTS5, which the Android system SQLite often
-  lacks. Bundle an engine that includes it (e.g. `requery/sqlite-android`) rather than
-  `android.database.sqlite`.
-- **Content bundling** — consume the prebuilt read-only DBs in `../../data/` (`bsb.bible`,
-  `mhcc.commentary`, `mhc.commentary`); the global read-write index (`biblesprout.db`) is
-  created on device.
+## Stack (mirrors `../notesprout_android`)
 
-See the root `CLAUDE.md` for the shared data model and BOOX device gotchas, and
-`../../docs/eink-constraints.md` for the e-ink UI rules that apply here too.
+- Kotlin 2.2.20 · AGP 8.11.1 · JDK 17 · minSdk 29 / targetSdk 35 / compileSdk 35 · arm64 only.
+- **Views + ViewBinding** (not Compose).
+- **Room** (2.7, KSP) over **SQLCipher** (`net.zetetic:sqlcipher-android`). Read-only Bible/
+  commentary DBs are opened **plaintext** (empty password); SQLCipher's SQLite includes FTS5,
+  which the reader's search needs and the BOOX system library can't be assumed to provide.
+  `BiblesproutApplication` loads the `sqlcipher` native lib at startup.
+- `applicationId` `com.symmetricalpalmtree.biblesprout` (replaces the Flutter app); debug adds
+  `.dev`. The Onyx SDK is not yet a dependency — add `onyxsdk-device` for e-ink refresh control.
+
+## Content
+
+Consume the prebuilt read-only DBs in `../../data/` (`bible/bsb.bible`,
+`commentaries/mhcc.commentary`, `commentaries/mhc.commentary`); the global read-write index
+(`biblesprout.db`) is created on device.
+
+## Build / run
+
+See the root `CLAUDE.md` for the full build/install/launch recipe and BOOX gotchas (notably:
+`am start` is broken here — launch with `monkey`; a fresh install needs a one-time
+`pm enable`). E-ink UI rules that apply here too live in `../../docs/eink-constraints.md`.

@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- E-ink: pure black on white, no action bar. Motion/refresh rules live in
+         docs/eink-constraints.md and are enforced in code, not the theme. -->
+    <style name="Theme.Biblesprout" parent="Theme.AppCompat.Light.NoActionBar">
+        <item name="android:windowBackground">@android:color/white</item>
+        <item name="colorPrimary">@android:color/black</item>
+        <item name="colorAccent">@android:color/black</item>
+        <item name="android:textColorPrimary">@android:color/black</item>
+    </style>
+</resources>

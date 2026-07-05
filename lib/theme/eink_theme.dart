@@ -39,6 +39,13 @@ class Eink {
       highlightColor: Colors.transparent,
       splashColor: Colors.transparent,
       hoverColor: Colors.transparent,
+      // Keep text input monochrome: black caret/handles, a faint gray
+      // selection band instead of the default blue.
+      textSelectionTheme: const TextSelectionThemeData(
+        cursorColor: black,
+        selectionColor: Color(0x33000000),
+        selectionHandleColor: black,
+      ),
       // No motion anywhere: every route swaps instantly.
       pageTransitionsTheme: const PageTransitionsTheme(
         builders: {

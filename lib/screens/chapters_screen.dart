@@ -2,8 +2,10 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
+import '../data/commentary_database.dart';
 import '../models/bible.dart';
 import '../reader/reader_screen.dart';
+import '../services/commentary_preferences.dart';
 import '../services/reading_position.dart';
 import '../theme/eink_theme.dart';
 import '../widgets/paged_view.dart';
@@ -15,11 +17,15 @@ class ChaptersScreen extends StatelessWidget {
     super.key,
     required this.bible,
     required this.store,
+    required this.commentaries,
     required this.book,
+    this.commentaryPrefs,
   });
 
   final Bible bible;
   final ReadingPositionStore store;
+  final List<CommentaryDatabase> commentaries;
+  final CommentaryPreferences? commentaryPrefs;
   final Book book;
 
   static const double _pad = 20;
@@ -32,6 +38,8 @@ class ChaptersScreen extends StatelessWidget {
         builder: (_) => ReaderScreen(
           bible: bible,
           store: store,
+          commentaries: commentaries,
+          commentaryPrefs: commentaryPrefs,
           start: ChapterRef(book.index, chapterNumber),
         ),
       ),

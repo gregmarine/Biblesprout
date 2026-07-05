@@ -1,8 +1,13 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart' show RenderParagraph;
 
+import '../data/commentary_database.dart';
 import '../models/bible.dart';
+import '../models/reference.dart';
+import '../services/commentary_preferences.dart';
 import '../services/reading_position.dart';
 import '../theme/eink_theme.dart';
+import 'commentary_launcher.dart';
 import 'paginator.dart';
 
 /// Full-screen paginated reader. Each chapter starts on a fresh page; swiping
@@ -15,13 +20,29 @@ class ReaderScreen extends StatefulWidget {
     required this.bible,
     required this.store,
     required this.start,
+    this.commentaries = const [],
+    this.commentaryPrefs,
     this.startPage = 0,
+    this.startVerse,
   });
 
   final Bible bible;
   final ReadingPositionStore store;
+
+  /// The installed commentaries. When non-empty, the reader offers a "Notes"
+  /// affordance opening the chapter's commentary; with more than one, it opens
+  /// the last-used commentary (a picker first if none has been used yet).
+  final List<CommentaryDatabase> commentaries;
+
+  /// Remembers the last-opened commentary so the picker can be skipped.
+  final CommentaryPreferences? commentaryPrefs;
+
   final ChapterRef start;
   final int startPage;
+
+  /// If set, open on whichever page of the start chapter contains this verse
+  /// (used by search / jump-to-passage). Takes precedence over [startPage].
+  final int? startVerse;
 
   @override
   State<ReaderScreen> createState() => _ReaderScreenState();
@@ -42,9 +63,17 @@ class _ReaderScreenState extends State<ReaderScreen> {
   late ChapterRef _ref;
   int _page = 0;
 
+  /// Attached to the current page's body text so a long-press can hit-test
+  /// which verse was pressed (for verse-anchored commentary).
+  final GlobalKey _bodyTextKey = GlobalKey();
+
   /// Set when navigating backwards into a chapter: after (re)pagination we jump
   /// to that chapter's last page.
   bool _pendingLastPage = false;
+
+  /// Set when opening via search/jump: after pagination we jump to the page
+  /// containing this verse number.
+  int? _pendingVerse;
 
   int _turnsSinceRefresh = 0;
   bool _flashing = false;
@@ -68,6 +97,7 @@ class _ReaderScreenState extends State<ReaderScreen> {
     super.initState();
     _ref = widget.start;
     _page = widget.startPage;
+    _pendingVerse = widget.startVerse;
 
     const family = Eink.fontFamily;
     _bodyStyle = const TextStyle(
@@ -138,7 +168,7 @@ class _ReaderScreenState extends State<ReaderScreen> {
     if (key == _cacheKey) return;
 
     final headingHeight = _headingHeight(width);
-    _atoms = Paginator.atomsFor(_chapter);
+    _atoms = Paginator.atomsFor(_chapter, ordinal: _ref.bookIndex + 1);
     _pages = Paginator.paginate(
       atoms: _atoms,
       bodyStyle: _bodyStyle,
@@ -153,6 +183,17 @@ class _ReaderScreenState extends State<ReaderScreen> {
     if (_pendingLastPage) {
       _page = _pages.length - 1;
       _pendingLastPage = false;
+    }
+    if (_pendingVerse != null) {
+      final target = _pendingVerse!;
+      for (var i = 0; i < _pages.length; i++) {
+        if (_pages[i]
+            .any((a) => a is NumberAtom && a.number == target)) {
+          _page = i;
+          break;
+        }
+      }
+      _pendingVerse = null;
     }
     if (_page >= _pages.length) _page = _pages.length - 1;
     if (_page < 0) _page = 0;
@@ -219,6 +260,38 @@ class _ReaderScreenState extends State<ReaderScreen> {
 
   void _openToc() => Navigator.of(context).popUntil((r) => r.isFirst);
 
+  /// Opens a commentary for the chapter currently in view (picker first when
+  /// more than one is installed).
+  Future<void> _openCommentary() {
+    final ordinal = _ref.bookIndex + 1;
+    return openCommentary(
+      context: context,
+      commentaries: widget.commentaries,
+      ranges: [VerseKey.chapterBounds(ordinal, _ref.chapterNumber)],
+      reference: '${_book.name} ${_chapter.number}',
+      prefs: widget.commentaryPrefs,
+    );
+  }
+
+  /// Long-press on the page body → open commentary for the pressed verse.
+  /// Hit-tests the pressed point against the rendered paragraph, so pressing
+  /// anywhere in a verse (not just its small number) selects it.
+  void _pressVerse(Offset globalPosition) {
+    if (widget.commentaries.isEmpty) return;
+    final ro = _bodyTextKey.currentContext?.findRenderObject();
+    if (ro is! RenderParagraph) return;
+    final offset =
+        ro.getPositionForOffset(ro.globalToLocal(globalPosition)).offset;
+    final verseKey = Paginator.verseKeyAtOffset(_pages[_page], offset);
+    if (verseKey == null) return;
+    openVerseCommentary(
+      context: context,
+      commentaries: widget.commentaries,
+      verseKey: verseKey,
+      prefs: widget.commentaryPrefs,
+    );
+  }
+
   // --- Build ----------------------------------------------------------------
 
   @override
@@ -245,7 +318,11 @@ class _ReaderScreenState extends State<ReaderScreen> {
                       height: _headerHeight,
                       child: _TopBar(
                         title: '${_book.name} ${_chapter.number}',
-                        onTap: _openToc,
+                        onBack: () => Navigator.of(context).pop(),
+                        onContents: _openToc,
+                        onNotes: widget.commentaries.isNotEmpty
+                            ? _openCommentary
+                            : null,
                       ),
                     ),
                     SizedBox(
@@ -298,6 +375,7 @@ class _ReaderScreenState extends State<ReaderScreen> {
           _prevPage();
         }
       },
+      onLongPressStart: (details) => _pressVerse(details.globalPosition),
       child: _buildPage(),
     );
   }
@@ -305,6 +383,7 @@ class _ReaderScreenState extends State<ReaderScreen> {
   Widget _buildPage() {
     final isFirstPage = _page == 0;
     final text = Text.rich(
+      key: _bodyTextKey,
       TextSpan(
         style: _bodyStyle,
         children: Paginator.renderSpans(_pages[_page], _numberStyle),
@@ -342,28 +421,46 @@ class _ReaderScreenState extends State<ReaderScreen> {
 }
 
 class _TopBar extends StatelessWidget {
-  const _TopBar({required this.title, required this.onTap});
+  const _TopBar({
+    required this.title,
+    required this.onBack,
+    required this.onContents,
+    this.onNotes,
+  });
 
   final String title;
-  final VoidCallback onTap;
+  final VoidCallback onBack;
+  final VoidCallback onContents;
+
+  /// When non-null, a "Notes" affordance opens the chapter's commentary.
+  final VoidCallback? onNotes;
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-        decoration: const BoxDecoration(
-          border: Border(bottom: BorderSide(color: Eink.rule)),
-        ),
-        child: Row(
-          children: [
-            const Icon(Icons.menu_book_outlined, size: 20, color: Eink.black),
-            const SizedBox(width: 10),
-            Expanded(
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+      decoration: const BoxDecoration(
+        border: Border(bottom: BorderSide(color: Eink.rule)),
+      ),
+      child: Row(
+        children: [
+          GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: onBack,
+            child: const Padding(
+              padding: EdgeInsets.all(8),
+              child: Icon(Icons.arrow_back, size: 24, color: Eink.black),
+            ),
+          ),
+          const SizedBox(width: 6),
+          Expanded(
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: onContents,
               child: Text(
                 title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
                 style: const TextStyle(
                   fontFamily: Eink.fontFamily,
                   fontSize: 18,
@@ -372,16 +469,39 @@ class _TopBar extends StatelessWidget {
                 ),
               ),
             ),
-            const Text(
-              'Contents',
-              style: TextStyle(
-                fontFamily: Eink.fontFamily,
-                fontSize: 14,
-                color: Eink.rule,
+          ),
+          if (onNotes != null)
+            GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: onNotes,
+              child: const Padding(
+                padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                child: Text(
+                  'Notes',
+                  style: TextStyle(
+                    fontFamily: Eink.fontFamily,
+                    fontSize: 14,
+                    color: Eink.rule,
+                  ),
+                ),
               ),
             ),
-          ],
-        ),
+          GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: onContents,
+            child: const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              child: Text(
+                'Contents',
+                style: TextStyle(
+                  fontFamily: Eink.fontFamily,
+                  fontSize: 14,
+                  color: Eink.rule,
+                ),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }

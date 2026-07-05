@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart' show RenderParagraph;
 
 import '../data/commentary_database.dart';
 import '../models/bible.dart';
@@ -56,6 +57,10 @@ class _ReaderScreenState extends State<ReaderScreen> {
 
   late ChapterRef _ref;
   int _page = 0;
+
+  /// Attached to the current page's body text so a long-press can hit-test
+  /// which verse was pressed (for verse-anchored commentary).
+  final GlobalKey _bodyTextKey = GlobalKey();
 
   /// Set when navigating backwards into a chapter: after (re)pagination we jump
   /// to that chapter's last page.
@@ -158,7 +163,7 @@ class _ReaderScreenState extends State<ReaderScreen> {
     if (key == _cacheKey) return;
 
     final headingHeight = _headingHeight(width);
-    _atoms = Paginator.atomsFor(_chapter);
+    _atoms = Paginator.atomsFor(_chapter, ordinal: _ref.bookIndex + 1);
     _pages = Paginator.paginate(
       atoms: _atoms,
       bodyStyle: _bodyStyle,
@@ -262,6 +267,24 @@ class _ReaderScreenState extends State<ReaderScreen> {
     );
   }
 
+  /// Long-press on the page body → open commentary for the pressed verse.
+  /// Hit-tests the pressed point against the rendered paragraph, so pressing
+  /// anywhere in a verse (not just its small number) selects it.
+  void _pressVerse(Offset globalPosition) {
+    if (widget.commentaries.isEmpty) return;
+    final ro = _bodyTextKey.currentContext?.findRenderObject();
+    if (ro is! RenderParagraph) return;
+    final offset =
+        ro.getPositionForOffset(ro.globalToLocal(globalPosition)).offset;
+    final verseKey = Paginator.verseKeyAtOffset(_pages[_page], offset);
+    if (verseKey == null) return;
+    openVerseCommentary(
+      context: context,
+      commentaries: widget.commentaries,
+      verseKey: verseKey,
+    );
+  }
+
   // --- Build ----------------------------------------------------------------
 
   @override
@@ -345,6 +368,7 @@ class _ReaderScreenState extends State<ReaderScreen> {
           _prevPage();
         }
       },
+      onLongPressStart: (details) => _pressVerse(details.globalPosition),
       child: _buildPage(),
     );
   }
@@ -352,6 +376,7 @@ class _ReaderScreenState extends State<ReaderScreen> {
   Widget _buildPage() {
     final isFirstPage = _page == 0;
     final text = Text.rich(
+      key: _bodyTextKey,
       TextSpan(
         style: _bodyStyle,
         children: Paginator.renderSpans(_pages[_page], _numberStyle),

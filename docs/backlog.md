@@ -27,10 +27,15 @@ committed plan or priority order — just a parking lot.
 - ~~Surface commentary from the **Passage view**.~~ Done — the passage view's
   "Notes" opens commentary over the passage's span (shared
   `lib/reader/commentary_launcher.dart`).
-- **Verse-anchored commentary**: tap a single verse → its comment, rather than
-  the whole chapter/passage span.
+- ~~**Verse-anchored commentary**: a single verse → its comment.~~ Done —
+  long-press anywhere in a verse (reader or passage) opens commentary for just
+  that verse (hit-tested via `Paginator.verseKeyAtOffset`). Long-press, not tap,
+  because the superscript number is too small a target and tap/swipe already
+  turn pages.
 - **Remember the last-used commentary** so the picker can default to it (or skip
   straight to it) instead of always prompting.
+- **Discoverability**: the long-press affordance isn't visible. Consider a first-run
+  hint, or a brief highlight of the pressed verse before the commentary opens.
 
 ## Annotations (schema exists, no code paths)
 

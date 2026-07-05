@@ -62,10 +62,15 @@ same integer a source does. Books are keyed by **USFM code** (`GEN`…`REV`).
   **reader** (per chapter) and the **Passage view** (over the passage's verse span, gathered
   across books) carry a **Notes** affordance, shown when ≥1 commentary is installed.
   `lib/reader/commentary_launcher.dart` is the shared entry point (`openCommentary` +
-  `pickCommentary`): it shows a bordered, scrimless picker when >1 commentary is installed,
-  gathers `entriesForRange` over the given verse-key ranges (deduped), and pushes
-  `lib/screens/commentary_screen.dart` (heading + flowing body in a `FlowingDocument`, whose
-  `_TopBar` takes an optional `onNotes`).
+  `openVerseCommentary` + `pickCommentary`): it shows a bordered, scrimless picker when >1
+  commentary is installed, gathers `entriesForRange` over the given verse-key ranges (deduped),
+  and pushes `lib/screens/commentary_screen.dart` (heading + flowing body in a `FlowingDocument`,
+  whose `_TopBar` takes an optional `onNotes`). **Verse-anchored:** a long-press anywhere in a
+  verse (reader or passage) opens commentary for just that verse — the press point is hit-tested
+  via the rendered `RenderParagraph` and `Paginator.verseKeyAtOffset` (which maps a character
+  offset back to a verse key, using the key each `NumberAtom` carries when built with an
+  `ordinal`). Long-press is used deliberately: the superscript number is too small a tap target
+  for e-ink, and tap/swipe are already page-turns.
 - `tool/build_commentary_db.dart` — dev-time builder for `*.commentary` from CCEL ThML.
   Two Matthew Henry commentaries (public domain, CCEL), both at full 1189/1189-chapter coverage:
   - **Concise** — `dart run tool/build_commentary_db.dart mhcc`: `assets/commentaries/mhcc.xml`

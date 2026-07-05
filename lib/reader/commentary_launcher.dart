@@ -1,8 +1,29 @@
 import 'package:flutter/material.dart';
 
+import '../data/canon.dart';
 import '../data/commentary_database.dart';
+import '../models/reference.dart';
 import '../screens/commentary_screen.dart';
 import '../theme/eink_theme.dart';
+
+/// Opens commentary anchored to a single verse [verseKey] (picker first when
+/// more than one is installed). The reference label is derived from the key,
+/// e.g. "John 3:16".
+Future<void> openVerseCommentary({
+  required BuildContext context,
+  required List<CommentaryDatabase> commentaries,
+  required int verseKey,
+}) {
+  final name = Canon.byOrdinal(VerseKey.ordinalOf(verseKey)).name;
+  final reference =
+      '$name ${VerseKey.chapterOf(verseKey)}:${VerseKey.verseOf(verseKey)}';
+  return openCommentary(
+    context: context,
+    commentaries: commentaries,
+    ranges: [(verseKey, verseKey)],
+    reference: reference,
+  );
+}
 
 /// Opens a commentary over one or more inclusive verse-key [ranges] — a single
 /// chapter from the reader, or the (possibly multi-book) span of a passage.

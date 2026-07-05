@@ -44,6 +44,13 @@ class PassageScreen extends StatelessWidget {
                 ranges: _commentaryRanges(),
                 reference: title,
               ),
+      onVerseTap: commentaries.isEmpty
+          ? null
+          : (verseKey) => openVerseCommentary(
+                context: context,
+                commentaries: commentaries,
+                verseKey: verseKey,
+              ),
     );
   }
 
@@ -90,7 +97,10 @@ class PassageScreen extends StatelessWidget {
         blocks.add(HeadingItem('${Canon.byUsfm(v.usfm).name} ${v.chapter}'));
         currentKey = key;
       }
-      atoms.add(NumberAtom(v.verse));
+      atoms.add(NumberAtom(
+        v.verse,
+        verseKey: VerseKey.encode(Canon.byUsfm(v.usfm).ordinal, v.chapter, v.verse),
+      ));
       for (final word in v.text.split(RegExp(r'\s+'))) {
         if (word.isNotEmpty) atoms.add(WordAtom(word));
       }

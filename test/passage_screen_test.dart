@@ -116,5 +116,34 @@ void main() {
       // The commentary route's top bar carries "<abbr> · <reference>".
       expect(find.text('MHCC · John 3:16'), findsOneWidget);
     });
+
+    testWidgets('long-pressing a verse opens commentary anchored to it',
+        (tester) async {
+      await tester.pumpWidget(MaterialApp(
+        home: PassageScreen(
+          title: 'John 3:14–16',
+          verses: [
+            _hit('JHN', 3, 14, 'Just as Moses lifted up the snake,'),
+            _hit('JHN', 3, 15, 'that everyone who believes may have life.'),
+            _hit('JHN', 3, 16, 'For God so loved the world.'),
+          ],
+          commentaries: [db],
+        ),
+      ));
+
+      // Long-press within the block (a large target, unlike the tiny number).
+      // The pressed point hit-tests to a single verse, so the route opens on
+      // one of these verses' commentary, not the whole span. The press timeout
+      // needs the fake clock, so do it outside runAsync; the DB query that
+      // follows needs real async, so let it settle inside.
+      await tester.longPressAt(const Offset(200, 200));
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 200)),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.textContaining(RegExp(r'MHCC · John 3:1[456]$')),
+          findsOneWidget);
+    });
   });
 }

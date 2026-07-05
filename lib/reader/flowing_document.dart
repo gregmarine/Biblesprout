@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart' show RenderParagraph;
 
 import '../theme/eink_theme.dart';
 import 'paginator.dart';
@@ -18,6 +19,7 @@ class FlowingDocument extends StatefulWidget {
     required this.title,
     required this.blocks,
     this.onNotes,
+    this.onVerseTap,
   });
 
   /// Shown in the top bar, e.g. "John 3:14–16, 18" or "MHCC · John 3".
@@ -30,6 +32,11 @@ class FlowingDocument extends StatefulWidget {
   /// the document (used by the passage view; the commentary view leaves it
   /// null).
   final VoidCallback? onNotes;
+
+  /// When non-null, tapping a verse number (one carrying a key) invokes this
+  /// with that verse's key — used by the passage view for verse-anchored
+  /// commentary. The commentary view leaves it null.
+  final void Function(int verseKey)? onVerseTap;
 
   @override
   State<FlowingDocument> createState() => _FlowingDocumentState();
@@ -49,6 +56,10 @@ class _FlowingDocumentState extends State<FlowingDocument> {
 
   String? _cacheKey;
   List<List<PassageItem>> _pages = const [];
+
+  /// One stable key per text block, so a long-press can hit-test the pressed
+  /// verse against that block's rendered paragraph.
+  final Map<TextItem, GlobalKey> _textKeys = {};
 
   TextScaler _textScaler = TextScaler.noScaling;
 
@@ -226,13 +237,32 @@ class _FlowingDocumentState extends State<FlowingDocument> {
           ),
         );
       case TextItem text:
-        return Text.rich(
+        final key = _textKeys.putIfAbsent(text, GlobalKey.new);
+        final rich = Text.rich(
+          key: key,
           TextSpan(
             style: _bodyStyle,
             children: Paginator.renderSpans(text.atoms, _numberStyle),
           ),
           strutStyle: Paginator.strutFor(_bodyStyle),
           textAlign: TextAlign.left,
+        );
+        final onVerseTap = widget.onVerseTap;
+        if (onVerseTap == null) return rich;
+        // Long-press anywhere in a verse opens its commentary. The number is a
+        // small target, so we hit-test the whole block instead.
+        return GestureDetector(
+          behavior: HitTestBehavior.translucent,
+          onLongPressStart: (details) {
+            final ro = key.currentContext?.findRenderObject();
+            if (ro is! RenderParagraph) return;
+            final offset = ro
+                .getPositionForOffset(ro.globalToLocal(details.globalPosition))
+                .offset;
+            final verseKey = Paginator.verseKeyAtOffset(text.atoms, offset);
+            if (verseKey != null) onVerseTap(verseKey);
+          },
+          child: rich,
         );
     }
   }

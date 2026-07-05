@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../models/bible.dart';
+import '../models/reference.dart';
 
 /// The smallest unit the paginator moves around: either a raised verse number
 /// or a single word of body text. Pages are always cut on atom boundaries, so
@@ -10,8 +11,13 @@ sealed class Atom {
 }
 
 class NumberAtom extends Atom {
-  const NumberAtom(this.number);
+  const NumberAtom(this.number, {this.verseKey});
   final int number;
+
+  /// The canonical verse key this number heads, when the book/chapter context
+  /// is known — enables verse-anchored actions (e.g. opening commentary on a
+  /// tapped verse). Null where that context isn't available.
+  final int? verseKey;
 }
 
 class WordAtom extends Atom {
@@ -30,10 +36,17 @@ class Paginator {
   const Paginator._();
 
   /// Flattens a chapter into its atom stream (verse number, then its words).
-  static List<Atom> atomsFor(Chapter chapter) {
+  /// Pass [ordinal] (the canon 1..66 book ordinal) to tag each verse number
+  /// with its canonical verse key, so the rendered numbers can be tapped.
+  static List<Atom> atomsFor(Chapter chapter, {int? ordinal}) {
     final atoms = <Atom>[];
     for (final verse in chapter.verses) {
-      atoms.add(NumberAtom(verse.number));
+      atoms.add(NumberAtom(
+        verse.number,
+        verseKey: ordinal == null
+            ? null
+            : VerseKey.encode(ordinal, chapter.number, verse.number),
+      ));
       for (final word in verse.text.split(RegExp(r'\s+'))) {
         if (word.isNotEmpty) atoms.add(WordAtom(word));
       }
@@ -48,7 +61,10 @@ class Paginator {
   /// [TextSpan] of the same glyphs and size as the rendered raised number, so
   /// line-break positions match the rendered output.
   static List<InlineSpan> measureSpans(List<Atom> atoms, TextStyle numberStyle) {
-    return _spans(atoms, (n) => TextSpan(text: '$n', style: numberStyle));
+    return _spans(
+      atoms,
+      (atom) => TextSpan(text: '${atom.number}', style: numberStyle),
+    );
   }
 
   /// Inline spans used for rendering. The verse number is a top-aligned
@@ -56,29 +72,55 @@ class Paginator {
   static List<InlineSpan> renderSpans(List<Atom> atoms, TextStyle numberStyle) {
     return _spans(
       atoms,
-      (n) => WidgetSpan(
+      (atom) => WidgetSpan(
         alignment: PlaceholderAlignment.top,
-        child: Text('$n', style: numberStyle),
+        child: Text('${atom.number}', style: numberStyle),
       ),
     );
   }
 
   static List<InlineSpan> _spans(
     List<Atom> atoms,
-    InlineSpan Function(int number) numberSpan,
+    InlineSpan Function(NumberAtom atom) numberSpan,
   ) {
     final spans = <InlineSpan>[];
     for (var i = 0; i < atoms.length; i++) {
       final atom = atoms[i];
       switch (atom) {
-        case NumberAtom(:final number):
+        case NumberAtom():
           if (i > 0) spans.add(const TextSpan(text: ' '));
-          spans.add(numberSpan(number));
+          spans.add(numberSpan(atom));
         case WordAtom(:final word):
           spans.add(TextSpan(text: i > 0 ? ' $word' : word));
       }
     }
     return spans;
+  }
+
+  /// The verse key at a character [offset] into the rendered span string —
+  /// i.e. which verse a tapped/pressed point falls in. Mirrors exactly how
+  /// [renderSpans] concatenates atoms (a verse number is one placeholder char,
+  /// each atom after the first gains a leading space), so an offset from
+  /// `RenderParagraph.getPositionForOffset` maps straight back to a verse.
+  /// Returns null before the first numbered verse or if none carry keys.
+  static int? verseKeyAtOffset(List<Atom> atoms, int offset) {
+    var pos = 0;
+    int? current;
+    for (var i = 0; i < atoms.length; i++) {
+      final atom = atoms[i];
+      final lead = i > 0 ? 1 : 0; // leading space TextSpan
+      final int len;
+      switch (atom) {
+        case NumberAtom():
+          current = atom.verseKey; // the number belongs to its own verse
+          len = lead + 1; // + one placeholder char for the WidgetSpan
+        case WordAtom(:final word):
+          len = lead + word.length;
+      }
+      if (offset < pos + len) return current;
+      pos += len;
+    }
+    return current;
   }
 
   /// Rendered height of [count] atoms starting at [start], measured exactly as

@@ -8,6 +8,7 @@ import '../reader/commentary_launcher.dart';
 import '../reader/flowing_document.dart';
 import '../reader/paginator.dart';
 import '../reader/passage_paginator.dart';
+import '../services/commentary_preferences.dart';
 
 /// A jump-to-passage view: the selected verses rendered as flowing, paginated
 /// text — just like the chapter reader, not a list. A "John 3" heading sits at
@@ -19,6 +20,7 @@ class PassageScreen extends StatelessWidget {
     required this.title,
     required this.verses,
     this.commentaries = const [],
+    this.commentaryPrefs,
   });
 
   /// The canonical reference label, e.g. "John 3:14–16, 18".
@@ -30,6 +32,9 @@ class PassageScreen extends StatelessWidget {
   /// Installed commentaries; when non-empty the top bar offers a "Notes"
   /// affordance opening commentary for the passage's span.
   final List<CommentaryDatabase> commentaries;
+
+  /// Remembers the last-opened commentary so the picker can be skipped.
+  final CommentaryPreferences? commentaryPrefs;
 
   @override
   Widget build(BuildContext context) {
@@ -43,6 +48,7 @@ class PassageScreen extends StatelessWidget {
                 commentaries: commentaries,
                 ranges: _commentaryRanges(),
                 reference: title,
+                prefs: commentaryPrefs,
               ),
       onVerseTap: commentaries.isEmpty
           ? null
@@ -50,6 +56,7 @@ class PassageScreen extends StatelessWidget {
                 context: context,
                 commentaries: commentaries,
                 verseKey: verseKey,
+                prefs: commentaryPrefs,
               ),
     );
   }

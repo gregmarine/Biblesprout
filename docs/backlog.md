@@ -32,8 +32,11 @@ committed plan or priority order — just a parking lot.
   that verse (hit-tested via `Paginator.verseKeyAtOffset`). Long-press, not tap,
   because the superscript number is too small a target and tap/swipe already
   turn pages.
-- **Remember the last-used commentary** so the picker can default to it (or skip
-  straight to it) instead of always prompting.
+- ~~**Remember the last-used commentary** so the picker can default to it (or skip
+  straight to it) instead of always prompting.~~ Done — with >1 installed the
+  launcher opens the last-used commentary directly (picker only on first use);
+  the commentary screen's "Change" affordance re-opens the picker to switch. The
+  choice persists in `biblesprout.db` (`app_setting`, via `CommentaryPreferences`).
 - **Discoverability**: the long-press affordance isn't visible. Consider a first-run
   hint, or a brief highlight of the pressed verse before the commentary opens.
 

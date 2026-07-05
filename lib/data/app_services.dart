@@ -7,6 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 import '../models/bible.dart';
+import '../services/commentary_preferences.dart';
 import '../services/reading_position.dart';
 import 'app_database.dart';
 import 'bible_database.dart';
@@ -23,6 +24,7 @@ class AppServices {
     required this.bible,
     required this.bibleDb,
     required this.commentaries,
+    required this.commentaryPrefs,
     required this.appDb,
     required this.positionStore,
     required this.initialPosition,
@@ -34,6 +36,9 @@ class AppServices {
   /// The installed commentaries, in bundle order (empty if none opened). The
   /// reader offers a picker when more than one is present.
   final List<CommentaryDatabase> commentaries;
+
+  /// Remembers the last-opened commentary so the picker can be skipped.
+  final CommentaryPreferences commentaryPrefs;
 
   final AppDatabase appDb;
   final ReadingPositionStore positionStore;
@@ -73,6 +78,7 @@ class AppServices {
     ));
 
     final commentaries = await _openCommentaries(dir.path, appDb);
+    final commentaryPrefs = await CommentaryPreferences.load(appDb);
 
     final store = ReadingPositionStore(appDb, bibleDb.id);
     await _migrateLegacyPosition(store);
@@ -81,6 +87,7 @@ class AppServices {
       bible: bible,
       bibleDb: bibleDb,
       commentaries: commentaries,
+      commentaryPrefs: commentaryPrefs,
       appDb: appDb,
       positionStore: store,
       initialPosition: await store.load(),

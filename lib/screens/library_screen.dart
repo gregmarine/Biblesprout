@@ -4,6 +4,7 @@ import '../data/bible_database.dart';
 import '../data/commentary_database.dart';
 import '../models/bible.dart';
 import '../reader/reader_screen.dart';
+import '../services/commentary_preferences.dart';
 import '../services/reading_position.dart';
 import '../theme/eink_theme.dart';
 import '../widgets/paged_view.dart';
@@ -23,12 +24,14 @@ class LibraryScreen extends StatefulWidget {
     required this.bibleDb,
     required this.commentaries,
     required this.store,
+    this.commentaryPrefs,
     this.lastPosition,
   });
 
   final Bible bible;
   final BibleDatabase bibleDb;
   final List<CommentaryDatabase> commentaries;
+  final CommentaryPreferences? commentaryPrefs;
   final ReadingPositionStore store;
   final ReadingPosition? lastPosition;
 
@@ -59,6 +62,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
           bible: widget.bible,
           store: widget.store,
           commentaries: widget.commentaries,
+          commentaryPrefs: widget.commentaryPrefs,
           book: book,
         ),
       ),
@@ -73,6 +77,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
           bible: widget.bible,
           bibleDb: widget.bibleDb,
           commentaries: widget.commentaries,
+          commentaryPrefs: widget.commentaryPrefs,
           store: widget.store,
         ),
       ),
@@ -90,6 +95,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
           bible: widget.bible,
           store: widget.store,
           commentaries: widget.commentaries,
+          commentaryPrefs: widget.commentaryPrefs,
           start: ChapterRef(pos.bookIndex, pos.chapterNumber),
           startPage: pos.page,
         ),

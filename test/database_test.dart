@@ -162,5 +162,35 @@ void main() {
       final latest = await db.latestProgress();
       expect(latest!.sourceId, 'mhc');
     });
+
+    test('settings round-trip and upsert', () async {
+      expect(await db.getSetting('last_commentary_id'), isNull);
+      await db.setSetting('last_commentary_id', 'mhcc');
+      expect(await db.getSetting('last_commentary_id'), 'mhcc');
+      await db.setSetting('last_commentary_id', 'mhc');
+      expect(await db.getSetting('last_commentary_id'), 'mhc');
+    });
+
+    test('upgrades a pre-existing v1 database to the settings store', () async {
+      final path = '${tmp.path}/legacy.db';
+      // Simulate an install created before app_setting existed (schema v1).
+      final v1 = await databaseFactory.openDatabase(
+        path,
+        options: OpenDatabaseOptions(
+          version: 1,
+          onCreate: (db, _) => db.execute(
+            'CREATE TABLE reading_progress (source_id TEXT PRIMARY KEY)',
+          ),
+        ),
+      );
+      await v1.close();
+
+      // Reopening through AppDatabase (v2) runs onUpgrade and adds app_setting.
+      final upgraded = await AppDatabase.openFile(path);
+      expect(await upgraded.getSetting('last_commentary_id'), isNull);
+      await upgraded.setSetting('last_commentary_id', 'mhcc');
+      expect(await upgraded.getSetting('last_commentary_id'), 'mhcc');
+      await upgraded.close();
+    });
   });
 }

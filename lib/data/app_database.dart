@@ -53,7 +53,7 @@ class AppDatabase {
 
   final Database _db;
 
-  static const int _schemaVersion = 1;
+  static const int _schemaVersion = 2;
 
   static Future<AppDatabase> openFile(String path) async {
     final db = await databaseFactory.openDatabase(
@@ -62,6 +62,7 @@ class AppDatabase {
         version: _schemaVersion,
         onConfigure: (db) => db.execute('PRAGMA foreign_keys = ON'),
         onCreate: _createSchema,
+        onUpgrade: _upgradeSchema,
       ),
     );
     return AppDatabase._(db);
@@ -71,6 +72,15 @@ class AppDatabase {
 
   static Future<void> _createSchema(Database db, int version) async {
     final batch = db.batch();
+
+    // Small key/value store for app-wide preferences (e.g. the last-used
+    // commentary). Values are strings; callers encode as needed.
+    batch.execute('''
+      CREATE TABLE app_setting (
+        key   TEXT PRIMARY KEY,
+        value TEXT NOT NULL
+      )
+    ''');
 
     // Registry of installed source databases.
     batch.execute('''
@@ -162,6 +172,43 @@ class AppDatabase {
     batch.execute('CREATE INDEX ix_crosslink_to ON cross_link(to_start_key)');
 
     await batch.commit(noResult: true);
+  }
+
+  static Future<void> _upgradeSchema(
+    Database db,
+    int oldVersion,
+    int newVersion,
+  ) async {
+    // v1 → v2: introduce the preferences key/value store.
+    if (oldVersion < 2) {
+      await db.execute('''
+        CREATE TABLE app_setting (
+          key   TEXT PRIMARY KEY,
+          value TEXT NOT NULL
+        )
+      ''');
+    }
+  }
+
+  // --- Preferences ----------------------------------------------------------
+
+  Future<String?> getSetting(String key) async {
+    final rows = await _db.query(
+      'app_setting',
+      columns: ['value'],
+      where: 'key = ?',
+      whereArgs: [key],
+      limit: 1,
+    );
+    return rows.isEmpty ? null : rows.first['value'] as String;
+  }
+
+  Future<void> setSetting(String key, String value) async {
+    await _db.insert(
+      'app_setting',
+      {'key': key, 'value': value},
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
   }
 
   // --- Source registry ------------------------------------------------------

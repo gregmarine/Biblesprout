@@ -19,6 +19,7 @@ class FlowingDocument extends StatefulWidget {
     required this.title,
     required this.blocks,
     this.onNotes,
+    this.actionLabel = 'Notes',
     this.onVerseTap,
   });
 
@@ -28,10 +29,13 @@ class FlowingDocument extends StatefulWidget {
   /// The document, already grouped into heading/text blocks by the caller.
   final List<PassageItem> blocks;
 
-  /// When non-null, a "Notes" affordance in the top bar opens commentary for
-  /// the document (used by the passage view; the commentary view leaves it
-  /// null).
+  /// When non-null, a top-bar affordance labelled [actionLabel] runs this — the
+  /// passage view uses it to open commentary ("Notes"); the commentary view
+  /// uses it to switch commentaries ("Change").
   final VoidCallback? onNotes;
+
+  /// Label for the [onNotes] affordance.
+  final String actionLabel;
 
   /// When non-null, tapping a verse number (one carrying a key) invokes this
   /// with that verse's key — used by the passage view for verse-anchored
@@ -155,6 +159,7 @@ class _FlowingDocumentState extends State<FlowingDocument> {
                         title: widget.title,
                         onBack: () => Navigator.of(context).pop(),
                         onNotes: widget.onNotes,
+                        actionLabel: widget.actionLabel,
                       ),
                     ),
                     SizedBox(
@@ -269,13 +274,19 @@ class _FlowingDocumentState extends State<FlowingDocument> {
 }
 
 class _TopBar extends StatelessWidget {
-  const _TopBar({required this.title, required this.onBack, this.onNotes});
+  const _TopBar({
+    required this.title,
+    required this.onBack,
+    this.onNotes,
+    this.actionLabel = 'Notes',
+  });
 
   final String title;
   final VoidCallback onBack;
 
-  /// When non-null, a "Notes" affordance opens commentary for the document.
+  /// When non-null, a top-bar affordance labelled [actionLabel] runs this.
   final VoidCallback? onNotes;
+  final String actionLabel;
 
   @override
   Widget build(BuildContext context) {
@@ -312,11 +323,11 @@ class _TopBar extends StatelessWidget {
             GestureDetector(
               behavior: HitTestBehavior.opaque,
               onTap: onNotes,
-              child: const Padding(
-                padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                 child: Text(
-                  'Notes',
-                  style: TextStyle(
+                  actionLabel,
+                  style: const TextStyle(
                     fontFamily: Eink.fontFamily,
                     fontSize: 14,
                     color: Eink.rule,

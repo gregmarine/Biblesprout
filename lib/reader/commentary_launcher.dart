@@ -4,15 +4,17 @@ import '../data/canon.dart';
 import '../data/commentary_database.dart';
 import '../models/reference.dart';
 import '../screens/commentary_screen.dart';
+import '../services/commentary_preferences.dart';
 import '../theme/eink_theme.dart';
 
-/// Opens commentary anchored to a single verse [verseKey] (picker first when
-/// more than one is installed). The reference label is derived from the key,
-/// e.g. "John 3:16".
+/// Opens commentary anchored to a single verse [verseKey] (last-used commentary,
+/// or a picker when more than one is installed and none has been used yet). The
+/// reference label is derived from the key, e.g. "John 3:16".
 Future<void> openVerseCommentary({
   required BuildContext context,
   required List<CommentaryDatabase> commentaries,
   required int verseKey,
+  CommentaryPreferences? prefs,
 }) {
   final name = Canon.byOrdinal(VerseKey.ordinalOf(verseKey)).name;
   final reference =
@@ -22,29 +24,70 @@ Future<void> openVerseCommentary({
     commentaries: commentaries,
     ranges: [(verseKey, verseKey)],
     reference: reference,
+    prefs: prefs,
   );
 }
 
 /// Opens a commentary over one or more inclusive verse-key [ranges] — a single
 /// chapter from the reader, or the (possibly multi-book) span of a passage.
 ///
-/// With more than one commentary installed it first shows a picker; with one it
-/// opens directly. Entries are gathered in the order the ranges are given and
-/// de-duplicated (a comment block that overlaps two adjacent ranges appears
-/// once). Does nothing if no commentary is installed, the picker is dismissed,
-/// or the span has no comments.
+/// With more than one commentary installed it opens the last-used one directly;
+/// if none has been used yet it first shows a picker (and remembers the choice).
+/// The opened screen offers a "Change" affordance to switch. Entries are
+/// gathered in the order the ranges are given and de-duplicated (a comment block
+/// that overlaps two adjacent ranges appears once). Does nothing if no
+/// commentary is installed, the picker is dismissed, or the span has no comments.
 Future<void> openCommentary({
   required BuildContext context,
   required List<CommentaryDatabase> commentaries,
   required List<(int, int)> ranges,
   required String reference,
+  CommentaryPreferences? prefs,
 }) async {
   if (commentaries.isEmpty) return;
-  final db = commentaries.length == 1
-      ? commentaries.first
-      : await pickCommentary(context, commentaries);
+  final db = await _resolve(context, commentaries, prefs);
   if (db == null || !context.mounted) return;
+  await _show(
+    context: context,
+    commentaries: commentaries,
+    ranges: ranges,
+    reference: reference,
+    prefs: prefs,
+    db: db,
+    replace: false,
+  );
+}
 
+/// Picks the commentary to open: the sole one, the remembered one if it is still
+/// installed, or the user's choice from the picker (which is then remembered).
+Future<CommentaryDatabase?> _resolve(
+  BuildContext context,
+  List<CommentaryDatabase> commentaries,
+  CommentaryPreferences? prefs,
+) async {
+  if (commentaries.length == 1) return commentaries.first;
+  final lastId = prefs?.lastId;
+  if (lastId != null) {
+    for (final db in commentaries) {
+      if (db.id == lastId) return db;
+    }
+  }
+  final chosen = await pickCommentary(context, commentaries);
+  if (chosen != null) await prefs?.remember(chosen.id);
+  return chosen;
+}
+
+/// Gathers [db]'s entries over [ranges] and pushes (or replaces the top route
+/// with) the commentary screen. A no-op if nothing was found.
+Future<void> _show({
+  required BuildContext context,
+  required List<CommentaryDatabase> commentaries,
+  required List<(int, int)> ranges,
+  required String reference,
+  required CommentaryPreferences? prefs,
+  required CommentaryDatabase db,
+  required bool replace,
+}) async {
   final seen = <int>{};
   final entries = <CommentaryEntry>[];
   for (final (start, end) in ranges) {
@@ -55,13 +98,51 @@ Future<void> openCommentary({
   if (!context.mounted || entries.isEmpty) return;
 
   final abbr = db.metadata['abbreviation'] ?? 'Notes';
-  await Navigator.of(context).push(
-    MaterialPageRoute(
-      builder: (_) => CommentaryScreen(
-        title: '$abbr · $reference',
-        entries: entries,
-      ),
+  final route = MaterialPageRoute<void>(
+    builder: (_) => CommentaryScreen(
+      title: '$abbr · $reference',
+      entries: entries,
+      // Only offer switching when there is something to switch to.
+      onChange: commentaries.length > 1
+          ? () => _change(
+                context: context,
+                commentaries: commentaries,
+                ranges: ranges,
+                reference: reference,
+                prefs: prefs,
+              )
+          : null,
     ),
+  );
+  final navigator = Navigator.of(context);
+  if (replace) {
+    await navigator.pushReplacement(route);
+  } else {
+    await navigator.push(route);
+  }
+}
+
+/// Re-opens the picker from an already-open commentary screen and, if a
+/// commentary is chosen, remembers it and replaces the screen with its notes.
+Future<void> _change({
+  required BuildContext context,
+  required List<CommentaryDatabase> commentaries,
+  required List<(int, int)> ranges,
+  required String reference,
+  required CommentaryPreferences? prefs,
+}) async {
+  final chosen = await pickCommentary(context, commentaries);
+  if (chosen == null || !context.mounted) return;
+  await prefs?.remember(chosen.id);
+  if (!context.mounted) return;
+  await _show(
+    context: context,
+    commentaries: commentaries,
+    ranges: ranges,
+    reference: reference,
+    prefs: prefs,
+    db: chosen,
+    replace: true,
   );
 }
 

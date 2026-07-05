@@ -6,6 +6,7 @@ import '../data/commentary_database.dart';
 import '../models/bible.dart';
 import '../models/reference.dart';
 import '../reader/reader_screen.dart';
+import '../services/commentary_preferences.dart';
 import '../services/reading_position.dart';
 import '../theme/eink_theme.dart';
 import '../widgets/paged_view.dart';
@@ -25,11 +26,13 @@ class FindScreen extends StatefulWidget {
     required this.bibleDb,
     required this.commentaries,
     required this.store,
+    this.commentaryPrefs,
   });
 
   final Bible bible;
   final BibleDatabase bibleDb;
   final List<CommentaryDatabase> commentaries;
+  final CommentaryPreferences? commentaryPrefs;
   final ReadingPositionStore store;
 
   @override
@@ -76,6 +79,7 @@ class _FindScreenState extends State<FindScreen> {
               title: passages.map((p) => p.format()).join('; '),
               verses: verses,
               commentaries: widget.commentaries,
+              commentaryPrefs: widget.commentaryPrefs,
             ),
           ),
         );
@@ -99,6 +103,7 @@ class _FindScreenState extends State<FindScreen> {
           bible: widget.bible,
           store: widget.store,
           commentaries: widget.commentaries,
+          commentaryPrefs: widget.commentaryPrefs,
           start: ChapterRef(book.ordinal - 1, hit.chapter),
           startVerse: hit.verse,
         ),

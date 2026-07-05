@@ -4,6 +4,7 @@ import 'package:flutter/rendering.dart' show RenderParagraph;
 import '../data/commentary_database.dart';
 import '../models/bible.dart';
 import '../models/reference.dart';
+import '../services/commentary_preferences.dart';
 import '../services/reading_position.dart';
 import '../theme/eink_theme.dart';
 import 'commentary_launcher.dart';
@@ -20,6 +21,7 @@ class ReaderScreen extends StatefulWidget {
     required this.store,
     required this.start,
     this.commentaries = const [],
+    this.commentaryPrefs,
     this.startPage = 0,
     this.startVerse,
   });
@@ -28,9 +30,12 @@ class ReaderScreen extends StatefulWidget {
   final ReadingPositionStore store;
 
   /// The installed commentaries. When non-empty, the reader offers a "Notes"
-  /// affordance opening the chapter's commentary; with more than one, tapping
-  /// it first shows a picker.
+  /// affordance opening the chapter's commentary; with more than one, it opens
+  /// the last-used commentary (a picker first if none has been used yet).
   final List<CommentaryDatabase> commentaries;
+
+  /// Remembers the last-opened commentary so the picker can be skipped.
+  final CommentaryPreferences? commentaryPrefs;
 
   final ChapterRef start;
   final int startPage;
@@ -264,6 +269,7 @@ class _ReaderScreenState extends State<ReaderScreen> {
       commentaries: widget.commentaries,
       ranges: [VerseKey.chapterBounds(ordinal, _ref.chapterNumber)],
       reference: '${_book.name} ${_chapter.number}',
+      prefs: widget.commentaryPrefs,
     );
   }
 
@@ -282,6 +288,7 @@ class _ReaderScreenState extends State<ReaderScreen> {
       context: context,
       commentaries: widget.commentaries,
       verseKey: verseKey,
+      prefs: widget.commentaryPrefs,
     );
   }
 

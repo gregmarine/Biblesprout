@@ -62,10 +62,16 @@ same integer a source does. Books are keyed by **USFM code** (`GEN`…`REV`).
   **reader** (per chapter) and the **Passage view** (over the passage's verse span, gathered
   across books) carry a **Notes** affordance, shown when ≥1 commentary is installed.
   `lib/reader/commentary_launcher.dart` is the shared entry point (`openCommentary` +
-  `openVerseCommentary` + `pickCommentary`): it shows a bordered, scrimless picker when >1
-  commentary is installed, gathers `entriesForRange` over the given verse-key ranges (deduped),
+  `openVerseCommentary` + `pickCommentary`): with >1 commentary installed it opens the
+  **last-used** one directly, showing a bordered, scrimless picker only on first use (before any
+  choice is remembered); it gathers `entriesForRange` over the given verse-key ranges (deduped),
   and pushes `lib/screens/commentary_screen.dart` (heading + flowing body in a `FlowingDocument`,
-  whose `_TopBar` takes an optional `onNotes`). **Verse-anchored:** a long-press anywhere in a
+  whose `_TopBar` takes an optional `onNotes` + `actionLabel`). The commentary screen passes a
+  **"Change"** action (`onChange`) that re-opens the picker and `pushReplacement`s the newly
+  chosen commentary. The last-used choice is a source id persisted via
+  `lib/services/commentary_preferences.dart` (`CommentaryPreferences`, backed by the global
+  index's `app_setting` key/value table); threaded from `AppServices.commentaryPrefs` through
+  library → chapters/find → reader/passage alongside `commentaries`. **Verse-anchored:** a long-press anywhere in a
   verse (reader or passage) opens commentary for just that verse — the press point is hit-tested
   via the rendered `RenderParagraph` and `Paginator.verseKeyAtOffset` (which maps a character
   offset back to a verse key, using the key each `NumberAtom` carries when built with an
@@ -85,8 +91,10 @@ same integer a source does. Books are keyed by **USFM code** (`GEN`…`REV`).
   (`passage`/`bbook`/`bref`/`pages`) so the Bible text isn't duplicated into commentary bodies,
   and `<h4>` section headings (the Concise uses `<h3>`).
 - `lib/data/app_database.dart` — the global index (`biblesprout.db`): source registry +
-  reading progress (wired), and schema for bookmarks/highlights/notes/cross-links (not yet
+  reading progress + an `app_setting` key/value store (`getSetting`/`setSetting`, e.g. the
+  last-used commentary), and schema for bookmarks/highlights/notes/cross-links (not yet
   exercised). All annotations address scripture by verse-key spans (`start_key`/`end_key`).
+  Schema is at v2 (`onUpgrade` adds `app_setting` for existing installs).
 - `lib/data/app_services.dart` — `bootstrap()`: inits the bundled SQLite, copies `bsb.bible`
   to writable storage, opens both DBs, registers the source, and does a one-time import of the
   old `shared_preferences` position into `biblesprout.db`.

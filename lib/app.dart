@@ -32,6 +32,7 @@ class _BiblesproutAppState extends State<BiblesproutApp> {
             bible: services.bible,
             bibleDb: services.bibleDb,
             commentaries: services.commentaries,
+            commentaryPrefs: services.commentaryPrefs,
             store: services.positionStore,
             lastPosition: services.initialPosition,
           );

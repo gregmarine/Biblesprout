@@ -7,6 +7,7 @@ import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:biblesprout/data/bible_database.dart';
 import 'package:biblesprout/data/commentary_database.dart';
 import 'package:biblesprout/screens/passage_screen.dart';
+import 'package:biblesprout/services/commentary_preferences.dart';
 
 VerseHit _hit(String usfm, int chapter, int verse, String text) => VerseHit(
       verseKey: 0,
@@ -144,6 +145,78 @@ void main() {
 
       expect(find.textContaining(RegExp(r'MHCC · John 3:1[456]$')),
           findsOneWidget);
+    });
+  });
+
+  group('with two commentaries installed', () {
+    late CommentaryDatabase mhcc;
+    late CommentaryDatabase mhc;
+
+    Future<CommentaryDatabase> open(String name) async {
+      final file = File('assets/commentaries/$name.commentary').absolute;
+      if (!file.existsSync()) {
+        fail('Missing ${file.path} — run: '
+            'dart run tool/build_commentary_db.dart $name');
+      }
+      return CommentaryDatabase.openFile(file.path);
+    }
+
+    setUpAll(() async {
+      sqfliteFfiInit();
+      databaseFactory = databaseFactoryFfi;
+      mhcc = await open('mhcc');
+      mhc = await open('mhc');
+    });
+
+    tearDownAll(() async {
+      await mhcc.close();
+      await mhc.close();
+    });
+
+    PassageScreen screenWith(CommentaryPreferences prefs) => PassageScreen(
+          title: 'John 3:16',
+          verses: [_hit('JHN', 3, 16, 'For God so loved the world.')],
+          commentaries: [mhcc, mhc],
+          commentaryPrefs: prefs,
+        );
+
+    testWidgets('first use shows the picker, then remembers the choice',
+        (tester) async {
+      final prefs = CommentaryPreferences.memory();
+      await tester.pumpWidget(MaterialApp(home: screenWith(prefs)));
+
+      // No last-used commentary yet → the picker lists both.
+      await tester.tap(find.text('Notes'));
+      await tester.pumpAndSettle();
+      expect(find.text('Commentary'), findsOneWidget);
+      expect(find.text("Matthew Henry's Concise Commentary"), findsOneWidget);
+      expect(find.text("Matthew Henry's Complete Commentary"), findsOneWidget);
+
+      // Choosing one remembers it and opens its notes (with a "Change" switch).
+      await tester.tap(find.text("Matthew Henry's Complete Commentary"));
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 200)),
+      );
+      await tester.pumpAndSettle();
+
+      expect(prefs.lastId, 'mhc');
+      expect(find.text('MHC · John 3:16'), findsOneWidget);
+      expect(find.text('Change'), findsOneWidget);
+    });
+
+    testWidgets('remembers the last-used commentary and skips the picker',
+        (tester) async {
+      final prefs = CommentaryPreferences.memory('mhc');
+      await tester.pumpWidget(MaterialApp(home: screenWith(prefs)));
+
+      await tester.runAsync(() async {
+        await tester.tap(find.text('Notes'));
+        await Future<void>.delayed(const Duration(milliseconds: 200));
+      });
+      await tester.pumpAndSettle();
+
+      expect(find.text('Commentary'), findsNothing); // picker skipped
+      expect(find.text('MHC · John 3:16'), findsOneWidget);
     });
   });
 }

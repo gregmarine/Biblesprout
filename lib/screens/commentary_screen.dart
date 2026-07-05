@@ -15,6 +15,7 @@ class CommentaryScreen extends StatelessWidget {
     super.key,
     required this.title,
     required this.entries,
+    this.onChange,
   });
 
   /// Top-bar label, e.g. "MHCC · John 3".
@@ -23,9 +24,18 @@ class CommentaryScreen extends StatelessWidget {
   /// The chapter's comments, in reading order.
   final List<CommentaryEntry> entries;
 
+  /// When non-null, a "Change" affordance in the top bar re-opens the picker to
+  /// switch commentaries (offered only when more than one is installed).
+  final VoidCallback? onChange;
+
   @override
   Widget build(BuildContext context) {
-    return FlowingDocument(title: title, blocks: _buildBlocks());
+    return FlowingDocument(
+      title: title,
+      blocks: _buildBlocks(),
+      onNotes: onChange,
+      actionLabel: 'Change',
+    );
   }
 
   List<PassageItem> _buildBlocks() {

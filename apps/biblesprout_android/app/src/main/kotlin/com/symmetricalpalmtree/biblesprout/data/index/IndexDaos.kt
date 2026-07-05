@@ -1,0 +1,37 @@
+package com.symmetricalpalmtree.biblesprout.data.index
+
+import androidx.room.Dao
+import androidx.room.Insert
+import androidx.room.OnConflictStrategy
+import androidx.room.Query
+
+@Dao
+interface SettingDao {
+    @Query("SELECT value FROM app_setting WHERE key = :key LIMIT 1")
+    suspend fun get(key: String): String?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun put(setting: AppSetting)
+}
+
+@Dao
+interface SourceDao {
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun register(source: Source)
+
+    @Query("SELECT * FROM source ORDER BY installed_at")
+    suspend fun installed(): List<Source>
+}
+
+@Dao
+interface ProgressDao {
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun save(progress: ReadingProgress)
+
+    @Query("SELECT * FROM reading_progress WHERE source_id = :sourceId LIMIT 1")
+    suspend fun forSource(sourceId: String): ReadingProgress?
+
+    /** The most recently read position across all sources ("continue reading"). */
+    @Query("SELECT * FROM reading_progress ORDER BY updated_at DESC LIMIT 1")
+    suspend fun latest(): ReadingProgress?
+}

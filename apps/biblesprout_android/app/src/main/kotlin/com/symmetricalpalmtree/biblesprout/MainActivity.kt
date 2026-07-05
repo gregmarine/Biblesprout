@@ -1,6 +1,7 @@
 package com.symmetricalpalmtree.biblesprout
 
 import android.os.Bundle
+import android.view.View
 import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
@@ -9,9 +10,9 @@ import androidx.core.content.ContextCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
-import androidx.core.view.doOnLayout
 import androidx.lifecycle.lifecycleScope
 import com.symmetricalpalmtree.biblesprout.data.AppServices
+import com.symmetricalpalmtree.biblesprout.data.index.ReadingPosition
 import com.symmetricalpalmtree.biblesprout.databinding.ActivityMainBinding
 import com.symmetricalpalmtree.biblesprout.model.Bible
 import com.symmetricalpalmtree.biblesprout.model.Book
@@ -19,10 +20,9 @@ import kotlinx.coroutines.launch
 
 /**
  * Home screen: the table of contents. Lists all 66 books grouped by testament
- * with a search shortcut. Like a physical Bible's contents the list does not
- * scroll — it paginates (swipe or the footer arrows). Ported from the Flutter
- * `library_screen.dart`; the "Continue reading" banner arrives with the reading-
- * position index.
+ * with a search shortcut and a "Continue reading" banner (from the reading-
+ * position index). Like a physical Bible's contents the list does not scroll —
+ * it paginates (swipe or the footer arrows). Ported from `library_screen.dart`.
  */
 class MainActivity : AppCompatActivity() {
 
@@ -31,6 +31,8 @@ class MainActivity : AppCompatActivity() {
     private var entries: List<Toc> = emptyList()
     private var pages: List<List<Toc>> = emptyList()
     private var current = 0
+    private var lastPaginatedHeight = 0
+    private var booted = false
 
     private val labelHeightPx by lazy { dp(54) }
     private val bookHeightPx by lazy { dp(62) }
@@ -49,12 +51,55 @@ class MainActivity : AppCompatActivity() {
             // TODO: open the Find screen once it exists.
             Toast.makeText(this, "Find — coming soon", Toast.LENGTH_SHORT).show()
         }
+        binding.continueBanner.setOnClickListener {
+            // TODO: open the reader at the saved position once it exists.
+            Toast.makeText(this, "Reader — coming soon", Toast.LENGTH_SHORT).show()
+        }
+
+        // Re-paginate whenever the pager's height changes (e.g. the continue
+        // banner appearing shrinks it). Deferred with post() so we mutate the
+        // view tree after this layout pass, not during it (else the new rows
+        // never get measured).
+        binding.pager.addOnLayoutChangeListener { _, _, top, _, bottom, _, _, _, _ ->
+            val height = bottom - top
+            if (height > 0 && height != lastPaginatedHeight) {
+                lastPaginatedHeight = height
+                schedulePaginate()
+            }
+        }
 
         lifecycleScope.launch {
             AppServices.bootstrap(applicationContext)
+            booted = true
             binding.translation.text = AppServices.bibleDb.title
             entries = buildToc(AppServices.bible)
-            binding.pager.doOnLayout { paginateAndRender() }
+            applyContinueBanner() // set before the first layout so it's accounted for
+            schedulePaginate()
+        }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // Reflect a position saved while away (e.g. after the reader lands).
+        if (booted) refreshContinueBanner()
+    }
+
+    /** Repaginate after the current layout pass (never mutate the tree during it). */
+    private fun schedulePaginate() = binding.pager.post { paginateAndRender() }
+
+    private fun refreshContinueBanner() {
+        lifecycleScope.launch { applyContinueBanner() }
+    }
+
+    private suspend fun applyContinueBanner() {
+        val pos = AppServices.readingPosition.latest()
+        if (pos == null) {
+            binding.continueBanner.visibility = View.GONE
+        } else {
+            val book = AppServices.bible.books[pos.bookIndex]
+            binding.continueLabel.text =
+                getString(R.string.continue_label, book.name, pos.chapterNumber)
+            binding.continueBanner.visibility = View.VISIBLE
         }
     }
 
@@ -74,6 +119,7 @@ class MainActivity : AppCompatActivity() {
     private fun paginateAndRender() {
         val height = binding.pager.height
         if (height <= 0 || entries.isEmpty()) return
+        lastPaginatedHeight = height
 
         val packed = ArrayList<List<Toc>>()
         var page = ArrayList<Toc>()
@@ -133,9 +179,12 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun openBook(book: Book) {
-        // TODO: navigate to the chapters screen once it exists.
-        Toast.makeText(this, "${book.name} — ${book.chapters.size} chapters", Toast.LENGTH_SHORT)
-            .show()
+        // Interim: with no chapters/reader screen yet, tapping a book records it
+        // as the continue-reading position (real navigation will replace this).
+        lifecycleScope.launch {
+            AppServices.readingPosition.save(ReadingPosition(book.index, 1, 0))
+            refreshContinueBanner()
+        }
     }
 
     private fun setArrow(view: android.widget.ImageView, enabled: Boolean) {

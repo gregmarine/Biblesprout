@@ -5,12 +5,24 @@ Native Android port of Biblesprout. Replaces the Flutter implementation kept (fr
 
 ## Status
 
-**Library screen working on the BOOX Go 6.** The data layer (below) is ported and verified, and
-the home screen — a paginated, non-scrolling table of contents grouped OT/NT — is up: swipe or
-the footer arrows turn pages, book rows show chapter counts, all in the e-ink black/white/serif
-style (`MainActivity`, `ui/SwipePager`, `data/AppServices`). Next: the global read-write index
-(Room) for reading position (which lights up a "Continue reading" banner), then chapters + reader.
-Book taps and search are placeholder toasts until those screens exist.
+**Library + reading-position index working on the BOOX Go 6.** The data layer (below), the
+paginated table-of-contents home screen, and the global read-write index are all up and verified.
+The library (`MainActivity`, `ui/SwipePager`, `data/AppServices`) paginates the 66 books OT/NT —
+swipe or footer arrows turn pages — in the e-ink black/white/serif style, with a "Continue
+reading" banner fed by the index. Next: chapters + reader (which will replace the interim
+book-tap-saves-position behavior with real navigation). Search is still a placeholder toast.
+
+### Global index — `data/index/` (Room)
+
+The read-write `biblesprout.db` via **Room over the framework SQLite** (plaintext; the index
+needs no FTS5 and holds no sensitive data — the read-only content DBs use SQLCipher instead).
+
+- Entities `AppSetting`, `Source`, `ReadingProgress`; DAOs for each; `AppIndexDatabase`.
+- `ReadingPositionStore` — translates the reader's 0-based `bookIndex` ↔ canonical USFM.
+- Wired through `AppServices` (opens the index, registers the BSB source, exposes
+  `readingPosition`). Verified: a saved position survives process death and lights the banner.
+- Annotation tables (bookmark/highlight/note/cross_link) are deferred until the feature that
+  writes them, so their columns settle then.
 
 ### `data/` package
 

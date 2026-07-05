@@ -3,9 +3,9 @@ import 'package:flutter/material.dart';
 import '../data/commentary_database.dart';
 import '../models/bible.dart';
 import '../models/reference.dart';
-import '../screens/commentary_screen.dart';
 import '../services/reading_position.dart';
 import '../theme/eink_theme.dart';
+import 'commentary_launcher.dart';
 import 'paginator.dart';
 
 /// Full-screen paginated reader. Each chapter starts on a fresh page; swiping
@@ -250,88 +250,15 @@ class _ReaderScreenState extends State<ReaderScreen> {
 
   void _openToc() => Navigator.of(context).popUntil((r) => r.isFirst);
 
-  /// Opens a commentary for the chapter currently in view. With more than one
-  /// installed, first shows a picker; with one, opens it directly.
-  Future<void> _openCommentary() async {
-    final available = widget.commentaries;
-    if (available.isEmpty) return;
-    final db = available.length == 1
-        ? available.first
-        : await _pickCommentary(available);
-    if (db == null || !mounted) return;
-
+  /// Opens a commentary for the chapter currently in view (picker first when
+  /// more than one is installed).
+  Future<void> _openCommentary() {
     final ordinal = _ref.bookIndex + 1;
-    final (start, end) = VerseKey.chapterBounds(ordinal, _ref.chapterNumber);
-    final entries = await db.entriesForRange(start, end);
-    if (!mounted) return;
-    final abbr = db.metadata['abbreviation'] ?? 'Notes';
-    await Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => CommentaryScreen(
-          title: '$abbr · ${_book.name} ${_chapter.number}',
-          entries: entries,
-        ),
-      ),
-    );
-  }
-
-  /// Presents the installed commentaries as a full-refresh list dialog and
-  /// returns the chosen one (null if dismissed).
-  Future<CommentaryDatabase?> _pickCommentary(
-    List<CommentaryDatabase> options,
-  ) {
-    return showDialog<CommentaryDatabase>(
+    return openCommentary(
       context: context,
-      // No dim scrim on e-ink; the hard black border delineates the panel.
-      barrierColor: Colors.transparent,
-      builder: (context) => Dialog(
-        backgroundColor: Eink.white,
-        elevation: 0,
-        shape: RoundedRectangleBorder(
-          side: const BorderSide(color: Eink.black, width: 2),
-          borderRadius: BorderRadius.circular(4),
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            const Padding(
-              padding: EdgeInsets.fromLTRB(20, 18, 20, 12),
-              child: Text(
-                'Commentary',
-                style: TextStyle(
-                  fontFamily: Eink.fontFamily,
-                  fontSize: 20,
-                  fontWeight: FontWeight.bold,
-                  color: Eink.black,
-                ),
-              ),
-            ),
-            for (final db in options)
-              GestureDetector(
-                behavior: HitTestBehavior.opaque,
-                onTap: () => Navigator.of(context).pop(db),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 20,
-                    vertical: 16,
-                  ),
-                  decoration: const BoxDecoration(
-                    border: Border(top: BorderSide(color: Eink.rule)),
-                  ),
-                  child: Text(
-                    db.title,
-                    style: const TextStyle(
-                      fontFamily: Eink.fontFamily,
-                      fontSize: 18,
-                      color: Eink.black,
-                    ),
-                  ),
-                ),
-              ),
-          ],
-        ),
-      ),
+      commentaries: widget.commentaries,
+      ranges: [VerseKey.chapterBounds(ordinal, _ref.chapterNumber)],
+      reference: '${_book.name} ${_chapter.number}',
     );
   }
 

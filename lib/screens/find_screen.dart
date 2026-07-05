@@ -75,6 +75,7 @@ class _FindScreenState extends State<FindScreen> {
             builder: (_) => PassageScreen(
               title: passages.map((p) => p.format()).join('; '),
               verses: verses,
+              commentaries: widget.commentaries,
             ),
           ),
         );

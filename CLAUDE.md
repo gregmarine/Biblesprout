@@ -58,11 +58,14 @@ same integer a source does. Books are keyed by **USFM code** (`GEN`…`REV`).
 - `lib/data/commentary_database.dart` — read-only accessor for a `*.commentary` source
   (verse-range comment entries): `entriesForVerse()`/`entriesForRange()` by verse-key
   containment + FTS5 `search()`. **Wired:** `bootstrap()` opens every bundled commentary into
-  `AppServices.commentaries`, threaded through library → chapters/find → reader. The reader's
-  top bar has a **Notes** affordance (shown when ≥1 commentary is installed) that opens the
-  current chapter's commentary in a `FlowingDocument`; with more than one installed it first
-  shows a bordered picker (`_pickCommentary`). `lib/screens/commentary_screen.dart` renders the
-  entries (heading + flowing body).
+  `AppServices.commentaries`, threaded through library → chapters/find → reader/passage. Both the
+  **reader** (per chapter) and the **Passage view** (over the passage's verse span, gathered
+  across books) carry a **Notes** affordance, shown when ≥1 commentary is installed.
+  `lib/reader/commentary_launcher.dart` is the shared entry point (`openCommentary` +
+  `pickCommentary`): it shows a bordered, scrimless picker when >1 commentary is installed,
+  gathers `entriesForRange` over the given verse-key ranges (deduped), and pushes
+  `lib/screens/commentary_screen.dart` (heading + flowing body in a `FlowingDocument`, whose
+  `_TopBar` takes an optional `onNotes`).
 - `tool/build_commentary_db.dart` — dev-time builder for `*.commentary` from CCEL ThML.
   Two Matthew Henry commentaries (public domain, CCEL), both at full 1189/1189-chapter coverage:
   - **Concise** — `dart run tool/build_commentary_db.dart mhcc`: `assets/commentaries/mhcc.xml`

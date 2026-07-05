@@ -24,9 +24,11 @@ committed plan or priority order — just a parking lot.
 
 ## Reader / commentary
 
-- Commentary is reachable only per-chapter from the reader. Surface it from the
-  **Passage view** too, and allow **verse-anchored** opening (tap a verse →
-  its comment).
+- ~~Surface commentary from the **Passage view**.~~ Done — the passage view's
+  "Notes" opens commentary over the passage's span (shared
+  `lib/reader/commentary_launcher.dart`).
+- **Verse-anchored commentary**: tap a single verse → its comment, rather than
+  the whole chapter/passage span.
 - **Remember the last-used commentary** so the picker can default to it (or skip
   straight to it) instead of always prompting.
 

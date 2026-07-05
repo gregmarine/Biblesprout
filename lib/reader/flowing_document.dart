@@ -17,6 +17,7 @@ class FlowingDocument extends StatefulWidget {
     super.key,
     required this.title,
     required this.blocks,
+    this.onNotes,
   });
 
   /// Shown in the top bar, e.g. "John 3:14–16, 18" or "MHCC · John 3".
@@ -24,6 +25,11 @@ class FlowingDocument extends StatefulWidget {
 
   /// The document, already grouped into heading/text blocks by the caller.
   final List<PassageItem> blocks;
+
+  /// When non-null, a "Notes" affordance in the top bar opens commentary for
+  /// the document (used by the passage view; the commentary view leaves it
+  /// null).
+  final VoidCallback? onNotes;
 
   @override
   State<FlowingDocument> createState() => _FlowingDocumentState();
@@ -137,6 +143,7 @@ class _FlowingDocumentState extends State<FlowingDocument> {
                       child: _TopBar(
                         title: widget.title,
                         onBack: () => Navigator.of(context).pop(),
+                        onNotes: widget.onNotes,
                       ),
                     ),
                     SizedBox(
@@ -232,10 +239,13 @@ class _FlowingDocumentState extends State<FlowingDocument> {
 }
 
 class _TopBar extends StatelessWidget {
-  const _TopBar({required this.title, required this.onBack});
+  const _TopBar({required this.title, required this.onBack, this.onNotes});
 
   final String title;
   final VoidCallback onBack;
+
+  /// When non-null, a "Notes" affordance opens commentary for the document.
+  final VoidCallback? onNotes;
 
   @override
   Widget build(BuildContext context) {
@@ -268,6 +278,22 @@ class _TopBar extends StatelessWidget {
               ),
             ),
           ),
+          if (onNotes != null)
+            GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: onNotes,
+              child: const Padding(
+                padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                child: Text(
+                  'Notes',
+                  style: TextStyle(
+                    fontFamily: Eink.fontFamily,
+                    fontSize: 14,
+                    color: Eink.rule,
+                  ),
+                ),
+              ),
+            ),
         ],
       ),
     );

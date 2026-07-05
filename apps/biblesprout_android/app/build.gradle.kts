@@ -37,6 +37,16 @@ android {
         buildConfig = true
     }
 
+    // Ship the prebuilt content DBs uncompressed so SQLite can open the copied
+    // file directly (and a future mmap path stays open).
+    androidResources {
+        noCompress += setOf("bible", "commentary")
+    }
+
+    // The content DBs are bundled from the repo-root /data folder at build time
+    // (see the bundleContentDbs task below) rather than committed under the app.
+    sourceSets["main"].assets.srcDir(layout.buildDirectory.dir("generated/contentAssets"))
+
     buildTypes {
         debug {
             // Lets the debug build sit alongside a release install if needed.
@@ -72,3 +82,14 @@ dependencies {
 
     testImplementation("junit:junit:4.13.2")
 }
+
+// Bundles the prebuilt read-only content DBs from /data into the app's assets
+// (under assets/content/). Keeps /data the single source of truth — no duplicate
+// binaries committed under the app. bsb.bible is the reader's spine; the large
+// commentary DBs will move to on-demand download rather than being bundled.
+val bundleContentDbs by tasks.registering(Copy::class) {
+    description = "Copy prebuilt content databases from /data into app assets."
+    from(rootProject.file("../../data/bible/bsb.bible"))
+    into(layout.buildDirectory.dir("generated/contentAssets/content"))
+}
+tasks.named("preBuild") { dependsOn(bundleContentDbs) }

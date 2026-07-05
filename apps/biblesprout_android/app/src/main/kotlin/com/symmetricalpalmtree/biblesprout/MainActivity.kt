@@ -5,8 +5,14 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
+import androidx.lifecycle.lifecycleScope
+import com.symmetricalpalmtree.biblesprout.data.BibleDatabase
+import com.symmetricalpalmtree.biblesprout.data.ContentInstaller
+import com.symmetricalpalmtree.biblesprout.data.VerseKey
 import com.symmetricalpalmtree.biblesprout.databinding.ActivityMainBinding
-import net.zetetic.database.sqlcipher.SQLiteDatabase
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 class MainActivity : AppCompatActivity() {
 
@@ -18,25 +24,33 @@ class MainActivity : AppCompatActivity() {
         setContentView(binding.root)
         goFullScreenImmersive()
 
-        // Scaffold smoke test: prove SQLCipher's bundled SQLite offers FTS5 on this
-        // device, opened plaintext (empty password). This is the whole reason the
-        // native app bundles an engine instead of using the framework's SQLite.
-        binding.status.text = "Biblesprout\n${fts5Check()}"
+        // Data-layer smoke test: install the bundled bsb.bible, open it plaintext
+        // through SQLCipher, and exercise a range lookup + FTS5 search off the
+        // main thread — the read path the reader and Find screen will use.
+        binding.status.text = "Biblesprout\nLoading…"
+        lifecycleScope.launch {
+            binding.status.text = withContext(Dispatchers.IO) { runBibleSmokeTest() }
+        }
     }
 
-    private fun fts5Check(): String = try {
-        // Empty password = SQLCipher plaintext mode; matches how the read-only
-        // content DBs (built unencrypted) will be opened.
-        val db = SQLiteDatabase.openOrCreateDatabase(":memory:", "", null, null)
-        db.execSQL("CREATE VIRTUAL TABLE t USING fts5(x)")
-        db.execSQL("INSERT INTO t(x) VALUES ('in the beginning God created')")
-        val c = db.rawQuery("SELECT count(*) FROM t WHERE t MATCH 'created'", null)
-        val hits = if (c.moveToFirst()) c.getInt(0) else -1
-        c.close()
-        db.close()
-        "FTS5 OK (matches: $hits)"
+    private fun runBibleSmokeTest(): String = try {
+        val file = ContentInstaller(this).ensureInstalled("content/bsb.bible", "bsb.bible")
+        val bible = BibleDatabase.openFile(file.absolutePath)
+        try {
+            val jhn316 = VerseKey.encode(43, 3, 16)
+            val verse = bible.versesInRange(jhn316, jhn316).firstOrNull()
+            val faithHits = bible.search("faith").size
+            buildString {
+                append(bible.title).append('\n')
+                append(verse?.reference).append(' ')
+                append(verse?.text?.take(48)).append("…\n")
+                append("search \"faith\": ").append(faithHits).append(" hits")
+            }
+        } finally {
+            bible.close()
+        }
     } catch (e: Exception) {
-        "FTS5 FAILED: ${e.message}"
+        "Data layer FAILED:\n${e.message}"
     }
 
     private fun goFullScreenImmersive() {

@@ -19,6 +19,7 @@ import com.symmetricalpalmtree.biblesprout.databinding.ActivityReaderBinding
 import com.symmetricalpalmtree.biblesprout.model.ChapterRef
 import com.symmetricalpalmtree.biblesprout.reader.Atom
 import com.symmetricalpalmtree.biblesprout.reader.ChapterPaginator
+import com.symmetricalpalmtree.biblesprout.reader.NumberAtom
 import com.symmetricalpalmtree.biblesprout.reader.ReaderPage
 import com.symmetricalpalmtree.biblesprout.reader.ReaderTypography
 import kotlinx.coroutines.Dispatchers
@@ -44,6 +45,7 @@ class ReaderActivity : AppCompatActivity() {
     private var pages: List<List<Atom>> = emptyList()
 
     private var pendingLastPage = false
+    private var pendingVerse = -1
     private var turnsSinceRefresh = 0
     private var paginateJob: Job? = null
 
@@ -66,6 +68,7 @@ class ReaderActivity : AppCompatActivity() {
             intent.getIntExtra(EXTRA_CHAPTER, 1),
         )
         page = intent.getIntExtra(EXTRA_START_PAGE, 0)
+        pendingVerse = intent.getIntExtra(EXTRA_START_VERSE, -1)
 
         binding.back.setOnClickListener { finish() }
         binding.title.setOnClickListener { openContents() }
@@ -162,6 +165,13 @@ class ReaderActivity : AppCompatActivity() {
                 page = pages.size - 1
                 pendingLastPage = false
             }
+            if (pendingVerse > 0) {
+                val idx = pages.indexOfFirst { atoms ->
+                    atoms.any { it is NumberAtom && it.number == pendingVerse }
+                }
+                if (idx >= 0) page = idx
+                pendingVerse = -1
+            }
             page = page.coerceIn(0, pages.size - 1)
             renderCurrentPage()
         }
@@ -228,5 +238,6 @@ class ReaderActivity : AppCompatActivity() {
         const val EXTRA_BOOK_INDEX = "book_index"
         const val EXTRA_CHAPTER = "chapter"
         const val EXTRA_START_PAGE = "start_page"
+        const val EXTRA_START_VERSE = "start_verse"
     }
 }

@@ -26,6 +26,15 @@
         <activity
             android:name=".ui.ReaderActivity"
             android:exported="false" />
+
+        <activity
+            android:name=".ui.FindActivity"
+            android:exported="false"
+            android:windowSoftInputMode="adjustResize" />
+
+        <activity
+            android:name=".ui.PassageActivity"
+            android:exported="false" />
     </application>
 
 </manifest>

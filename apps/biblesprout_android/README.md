@@ -5,14 +5,34 @@ Native Android port of Biblesprout. Replaces the Flutter implementation kept (fr
 
 ## Status
 
-**Reader working end-to-end on the BOOX Go 6.** Library → chapters grid → paginated reader all
-run, verified on-device. The library (`MainActivity`, `ui/SwipePager`, `data/AppServices`)
-paginates the 66 books OT/NT with a "Continue reading" banner from the index;
-`ui/ChaptersActivity` is the paginated chapter-number grid; `ui/ReaderActivity` + the `reader/`
-package are the paginated reader — superscript verse numbers, a book/chapter heading on each
-chapter's first page, tap-thirds / swipe page turns that flow across chapter and book
-boundaries, position persistence, and a black full-refresh flash every 6 turns. Next: Find/
-search, commentary, and the downloadable-sources model. Search is still a placeholder toast.
+**Reader + Find working end-to-end on the BOOX Go 6.** Library → chapters grid → paginated
+reader, and Find → passage/search, all run and verified on-device. The library (`MainActivity`,
+`ui/SwipePager`, `data/AppServices`) paginates the 66 books OT/NT with a "Continue reading"
+banner from the index; `ui/ChaptersActivity` is the paginated chapter-number grid;
+`ui/ReaderActivity` + the `reader/` package are the paginated reader — superscript verse
+numbers, a book/chapter heading on each chapter's first page, tap-thirds / swipe page turns that
+flow across chapter and book boundaries, position persistence, and a black full-refresh flash
+every 6 turns. Next: commentary, and the downloadable-sources model.
+
+### Find — `ui/FindActivity`, `ui/PassageActivity`, `data/Reference.kt`
+
+One smart input reached from the library header. On submit the text is parsed as one or more
+scripture references (`ReferenceParser.parseAll` — `John 3:16`, `Gen 1:5-10`, `Psalm 23`,
+`John 3:14-17, Acts 1:3`, spaceless/abbreviated/roman-numeral forms); if it resolves to real
+verses it opens the flowing **passage view**, otherwise it runs FTS5 search shown as a paginated
+list of verse rows that open the reader on that verse's page (`ReaderActivity` gained an
+`EXTRA_START_VERSE` that lands on the page containing the verse).
+
+- `data/Reference.kt` — `Passage` (book + verse ranges, `startKey`/`endKey`/`format()`) and
+  `ReferenceParser` (`parse`/`parseAll`/`parseSpec`); a bare number after a reference continues
+  the prior book. Unit-tested in `ReferenceParserTest.kt`.
+- `ui/PassageActivity` — renders a passage like the reader (not a list): a "John 3" heading,
+  superscript verse numbers, verses flowing together, a fresh inline heading where the passage
+  crosses a chapter or book. Paginates if long; same tap-thirds / swipe / flash affordances.
+- `reader/PassagePaginator` + `reader/FlowingView` — pack heading + text blocks into pages
+  (heading kept with its first text block) and draw the stacked flow. Because native measures
+  and draws the same `StaticLayout`, no per-block line reserve is needed (unlike Flutter's
+  `passage_paginator.dart`, which reserved a line per block to bound `RenderParagraph` drift).
 
 ### Reader — `reader/` package
 

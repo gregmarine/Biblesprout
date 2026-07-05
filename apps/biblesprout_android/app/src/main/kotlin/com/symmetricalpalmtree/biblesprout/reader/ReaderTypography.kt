@@ -63,6 +63,14 @@ class ReaderTypography(context: Context) {
         color = BLACK
     }
 
+    // Inline heading for the flowing passage view ("John 3"), centered.
+    private val passageHeading = TextPaint(TextPaint.ANTI_ALIAS_FLAG).apply {
+        typeface = serifBold
+        textSize = sp(30f * 0.9f)
+        color = BLACK
+        letterSpacing = 0.037f
+    }
+
     /** The rendered/measured spans for a run of atoms (identical for both uses). */
     private fun spannable(atoms: List<Atom>): SpannableStringBuilder {
         val sb = SpannableStringBuilder()
@@ -110,6 +118,10 @@ class ReaderTypography(context: Context) {
         val (title, number) = headingLayouts(bookName, chapter, width)
         return title.height + gap1 + number.height + gap2
     }
+
+    /** A centered inline heading for the flowing passage view ("John 3"). */
+    fun passageHeadingLayout(text: String, width: Int): StaticLayout =
+        layout(text, passageHeading, width, Layout.Alignment.ALIGN_CENTER)
 
     companion object {
         const val BLACK = 0xFF000000.toInt()

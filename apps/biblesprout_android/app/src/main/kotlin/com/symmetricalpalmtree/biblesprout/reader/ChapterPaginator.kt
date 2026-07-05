@@ -38,35 +38,51 @@ object ChapterPaginator {
         var start = 0
         while (start < atoms.size) {
             val maxHeight = if (pages.isEmpty()) firstPageHeight else otherPageHeight
-            val remaining = atoms.size - start
-            fun heightOf(count: Int) = typo.measureBody(atoms, start, count, width)
-
-            // Grow a lower bound that still fits, then binary-search the largest.
-            var lo = 1
-            var hi = 1
-            while (hi < remaining && heightOf(hi) <= maxHeight) {
-                lo = hi
-                hi *= 2
-            }
-            if (hi > remaining) hi = remaining
-
-            var best = lo
-            var low = lo
-            var high = hi
-            while (low <= high) {
-                val mid = (low + high) / 2
-                if (heightOf(mid) <= maxHeight) {
-                    best = mid
-                    low = mid + 1
-                } else {
-                    high = mid - 1
-                }
-            }
-
-            pages.add(ArrayList(atoms.subList(start, start + best)))
-            start += best
+            // Always place at least one atom to guarantee progress.
+            val count = fitCount(atoms, start, maxHeight, typo, width).coerceAtLeast(1)
+            pages.add(ArrayList(atoms.subList(start, start + count)))
+            start += count
         }
         return pages
+    }
+
+    /**
+     * The most atoms from [start] whose rendered height fits [maxHeight], or 0 if
+     * not even one fits. Binary search over [ReaderTypography.measureBody].
+     */
+    fun fitCount(
+        atoms: List<Atom>,
+        start: Int,
+        maxHeight: Int,
+        typo: ReaderTypography,
+        width: Int,
+    ): Int {
+        val remaining = atoms.size - start
+        if (remaining <= 0) return 0
+        fun heightOf(count: Int) = typo.measureBody(atoms, start, count, width)
+        if (heightOf(1) > maxHeight) return 0
+
+        var lo = 1
+        var hi = 1
+        while (hi < remaining && heightOf(hi) <= maxHeight) {
+            lo = hi
+            hi *= 2
+        }
+        if (hi > remaining) hi = remaining
+
+        var best = lo
+        var low = lo
+        var high = hi
+        while (low <= high) {
+            val mid = (low + high) / 2
+            if (heightOf(mid) <= maxHeight) {
+                best = mid
+                low = mid + 1
+            } else {
+                high = mid - 1
+            }
+        }
+        return best
     }
 
     private val WHITESPACE = Regex("\\s+")

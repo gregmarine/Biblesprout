@@ -5,7 +5,6 @@ import android.os.Bundle
 import android.view.View
 import android.widget.LinearLayout
 import android.widget.TextView
-import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import androidx.core.view.WindowCompat
@@ -18,6 +17,7 @@ import com.symmetricalpalmtree.biblesprout.databinding.ActivityMainBinding
 import com.symmetricalpalmtree.biblesprout.model.Bible
 import com.symmetricalpalmtree.biblesprout.model.Book
 import com.symmetricalpalmtree.biblesprout.ui.ChaptersActivity
+import com.symmetricalpalmtree.biblesprout.ui.FindActivity
 import com.symmetricalpalmtree.biblesprout.ui.ReaderActivity
 import kotlinx.coroutines.launch
 
@@ -52,8 +52,7 @@ class MainActivity : AppCompatActivity() {
         binding.prev.setOnClickListener { showPage(current - 1) }
         binding.next.setOnClickListener { showPage(current + 1) }
         binding.search.setOnClickListener {
-            // TODO: open the Find screen once it exists.
-            Toast.makeText(this, "Find — coming soon", Toast.LENGTH_SHORT).show()
+            startActivity(Intent(this, FindActivity::class.java))
         }
         binding.continueBanner.setOnClickListener {
             continuePosition?.let { startReader(it.bookIndex, it.chapterNumber, it.page) }

@@ -1,22 +1,39 @@
 package com.symmetricalpalmtree.biblesprout
 
 import android.os.Bundle
+import android.widget.LinearLayout
+import android.widget.TextView
+import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.content.ContextCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
+import androidx.core.view.doOnLayout
 import androidx.lifecycle.lifecycleScope
-import com.symmetricalpalmtree.biblesprout.data.BibleDatabase
-import com.symmetricalpalmtree.biblesprout.data.ContentInstaller
-import com.symmetricalpalmtree.biblesprout.data.VerseKey
+import com.symmetricalpalmtree.biblesprout.data.AppServices
 import com.symmetricalpalmtree.biblesprout.databinding.ActivityMainBinding
-import kotlinx.coroutines.Dispatchers
+import com.symmetricalpalmtree.biblesprout.model.Bible
+import com.symmetricalpalmtree.biblesprout.model.Book
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 
+/**
+ * Home screen: the table of contents. Lists all 66 books grouped by testament
+ * with a search shortcut. Like a physical Bible's contents the list does not
+ * scroll — it paginates (swipe or the footer arrows). Ported from the Flutter
+ * `library_screen.dart`; the "Continue reading" banner arrives with the reading-
+ * position index.
+ */
 class MainActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityMainBinding
+
+    private var entries: List<Toc> = emptyList()
+    private var pages: List<List<Toc>> = emptyList()
+    private var current = 0
+
+    private val labelHeightPx by lazy { dp(54) }
+    private val bookHeightPx by lazy { dp(62) }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -24,34 +41,111 @@ class MainActivity : AppCompatActivity() {
         setContentView(binding.root)
         goFullScreenImmersive()
 
-        // Data-layer smoke test: install the bundled bsb.bible, open it plaintext
-        // through SQLCipher, and exercise a range lookup + FTS5 search off the
-        // main thread — the read path the reader and Find screen will use.
-        binding.status.text = "Biblesprout\nLoading…"
+        binding.pager.onSwipeLeft = { showPage(current + 1) }
+        binding.pager.onSwipeRight = { showPage(current - 1) }
+        binding.prev.setOnClickListener { showPage(current - 1) }
+        binding.next.setOnClickListener { showPage(current + 1) }
+        binding.search.setOnClickListener {
+            // TODO: open the Find screen once it exists.
+            Toast.makeText(this, "Find — coming soon", Toast.LENGTH_SHORT).show()
+        }
+
         lifecycleScope.launch {
-            binding.status.text = withContext(Dispatchers.IO) { runBibleSmokeTest() }
+            AppServices.bootstrap(applicationContext)
+            binding.translation.text = AppServices.bibleDb.title
+            entries = buildToc(AppServices.bible)
+            binding.pager.doOnLayout { paginateAndRender() }
         }
     }
 
-    private fun runBibleSmokeTest(): String = try {
-        val file = ContentInstaller(this).ensureInstalled("content/bsb.bible", "bsb.bible")
-        val bible = BibleDatabase.openFile(file.absolutePath)
-        try {
-            val jhn316 = VerseKey.encode(43, 3, 16)
-            val verse = bible.versesInRange(jhn316, jhn316).firstOrNull()
-            val faithHits = bible.search("faith").size
-            buildString {
-                append(bible.title).append('\n')
-                append(verse?.reference).append(' ')
-                append(verse?.text?.take(48)).append("…\n")
-                append("search \"faith\": ").append(faithHits).append(" hits")
-            }
-        } finally {
-            bible.close()
-        }
-    } catch (e: Exception) {
-        "Data layer FAILED:\n${e.message}"
+    /** Old Testament heading + books, then New Testament heading + books. */
+    private fun buildToc(bible: Bible): List<Toc> = buildList {
+        add(Toc.Label(getString(R.string.old_testament).uppercase(), labelHeightPx))
+        bible.oldTestament.forEach { add(Toc.BookRow(it, bookHeightPx)) }
+        add(Toc.Label(getString(R.string.new_testament).uppercase(), labelHeightPx))
+        bible.newTestament.forEach { add(Toc.BookRow(it, bookHeightPx)) }
     }
+
+    /**
+     * Packs entries into pages that fit the pager's height. A testament label is
+     * never left as the last row of a page — it is only placed if the book that
+     * follows it also fits, so headings always sit above their books.
+     */
+    private fun paginateAndRender() {
+        val height = binding.pager.height
+        if (height <= 0 || entries.isEmpty()) return
+
+        val packed = ArrayList<List<Toc>>()
+        var page = ArrayList<Toc>()
+        var used = 0
+        for (i in entries.indices) {
+            val e = entries[i]
+            var needed = e.heightPx
+            if (e is Toc.Label && i + 1 < entries.size) {
+                needed += entries[i + 1].heightPx // keep heading with its first book
+            }
+            if (page.isNotEmpty() && used + needed > height) {
+                packed.add(page)
+                page = ArrayList()
+                used = 0
+            }
+            page.add(e)
+            used += e.heightPx
+        }
+        if (page.isNotEmpty()) packed.add(page)
+
+        pages = packed
+        showPage(current)
+    }
+
+    private fun showPage(index: Int) {
+        if (pages.isEmpty()) return
+        current = index.coerceIn(0, pages.size - 1)
+
+        val column = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.MATCH_PARENT,
+            )
+        }
+        for (entry in pages[current]) {
+            column.addView(rowView(entry, column))
+        }
+        binding.pager.removeAllViews()
+        binding.pager.addView(column)
+
+        binding.pageIndicator.text = getString(R.string.page_indicator, current + 1, pages.size)
+        setArrow(binding.prev, current > 0)
+        setArrow(binding.next, current < pages.size - 1)
+    }
+
+    private fun rowView(entry: Toc, parent: LinearLayout) = when (entry) {
+        is Toc.Label -> (layoutInflater.inflate(R.layout.item_testament, parent, false) as TextView)
+            .apply { text = entry.text }
+
+        is Toc.BookRow -> layoutInflater.inflate(R.layout.item_book, parent, false).apply {
+            findViewById<TextView>(R.id.bookName).text = entry.book.name
+            findViewById<TextView>(R.id.chapterCount).text =
+                getString(R.string.chapter_count, entry.book.chapters.size)
+            setOnClickListener { openBook(entry.book) }
+        }
+    }
+
+    private fun openBook(book: Book) {
+        // TODO: navigate to the chapters screen once it exists.
+        Toast.makeText(this, "${book.name} — ${book.chapters.size} chapters", Toast.LENGTH_SHORT)
+            .show()
+    }
+
+    private fun setArrow(view: android.widget.ImageView, enabled: Boolean) {
+        view.isEnabled = enabled
+        view.setColorFilter(
+            ContextCompat.getColor(this, if (enabled) R.color.eink_black else R.color.eink_disabled),
+        )
+    }
+
+    private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
 
     private fun goFullScreenImmersive() {
         WindowCompat.setDecorFitsSystemWindows(window, false)
@@ -60,5 +154,12 @@ class MainActivity : AppCompatActivity() {
             systemBarsBehavior =
                 WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
         }
+    }
+
+    /** One row of the table of contents: a testament heading or a book. */
+    private sealed interface Toc {
+        val heightPx: Int
+        data class Label(val text: String, override val heightPx: Int) : Toc
+        data class BookRow(val book: Book, override val heightPx: Int) : Toc
     }
 }

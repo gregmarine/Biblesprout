@@ -5,11 +5,12 @@ Native Android port of Biblesprout. Replaces the Flutter implementation kept (fr
 
 ## Status
 
-**Data layer working on the BOOX Go 6.** The read-only content-DB layer is ported from Flutter
-and verified end-to-end on-device: `bsb.bible` is bundled from `../../data`, installed to app
-storage, opened plaintext through SQLCipher, and a verse-key range lookup (John 3:16) + FTS5
-search both return correct results (see `MainActivity`'s smoke test). Next: the reader/library
-UI, then the global read-write index (Room) for reading position and annotations.
+**Library screen working on the BOOX Go 6.** The data layer (below) is ported and verified, and
+the home screen — a paginated, non-scrolling table of contents grouped OT/NT — is up: swipe or
+the footer arrows turn pages, book rows show chapter counts, all in the e-ink black/white/serif
+style (`MainActivity`, `ui/SwipePager`, `data/AppServices`). Next: the global read-write index
+(Room) for reading position (which lights up a "Continue reading" banner), then chapters + reader.
+Book taps and search are placeholder toasts until those screens exist.
 
 ### `data/` package
 

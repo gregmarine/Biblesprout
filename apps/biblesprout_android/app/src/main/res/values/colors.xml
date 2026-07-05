@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- E-ink palette (see docs/eink-constraints.md). Pure black on pure white,
+         one mid-gray for hairlines and secondary chrome only. -->
+    <color name="eink_black">#FF000000</color>
+    <color name="eink_white">#FFFFFFFF</color>
+    <color name="eink_rule">#FF555555</color>
+    <!-- Faint hairline between book rows (matches the Flutter 0xFFDDDDDD). -->
+    <color name="eink_hairline">#FFDDDDDD</color>
+    <!-- Borderline disabled-arrow gray; used only for the footer paging arrows. -->
+    <color name="eink_disabled">#FFCCCCCC</color>
+</resources>

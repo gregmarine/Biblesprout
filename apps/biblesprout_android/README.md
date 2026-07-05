@@ -5,12 +5,30 @@ Native Android port of Biblesprout. Replaces the Flutter implementation kept (fr
 
 ## Status
 
-**Library + reading-position index working on the BOOX Go 6.** The data layer (below), the
-paginated table-of-contents home screen, and the global read-write index are all up and verified.
-The library (`MainActivity`, `ui/SwipePager`, `data/AppServices`) paginates the 66 books OT/NT —
-swipe or footer arrows turn pages — in the e-ink black/white/serif style, with a "Continue
-reading" banner fed by the index. Next: chapters + reader (which will replace the interim
-book-tap-saves-position behavior with real navigation). Search is still a placeholder toast.
+**Reader working end-to-end on the BOOX Go 6.** Library → chapters grid → paginated reader all
+run, verified on-device. The library (`MainActivity`, `ui/SwipePager`, `data/AppServices`)
+paginates the 66 books OT/NT with a "Continue reading" banner from the index;
+`ui/ChaptersActivity` is the paginated chapter-number grid; `ui/ReaderActivity` + the `reader/`
+package are the paginated reader — superscript verse numbers, a book/chapter heading on each
+chapter's first page, tap-thirds / swipe page turns that flow across chapter and book
+boundaries, position persistence, and a black full-refresh flash every 6 turns. Next: Find/
+search, commentary, and the downloadable-sources model. Search is still a placeholder toast.
+
+### Reader — `reader/` package
+
+The paginator's correctness trick differs from Flutter's (which forced a `StrutStyle` so its
+separate `TextPainter` measurement and `RenderParagraph` render agreed): here the paginator
+measures and `ReaderView` draws the **same `StaticLayout`**, so they're identical by
+construction — a page that measures as fitting always renders without overflow.
+`LineHeightSpan.Standard` pins every line to one body line-height (so a superscript number never
+grows its line), and sizes are in **sp** so the BOOX's 0.85 font scale is honoured automatically.
+
+- `Atom` / `ChapterPaginator` — flatten a chapter to verse-number + word atoms, binary-search
+  the most atoms that fit each page (first page reserves the heading).
+- `ReaderTypography` — fonts, sizes, spannable building (superscript spans), StaticLayout config.
+- `ReaderView` — draws a `ReaderPage` (optional heading + body) with the reader's padding.
+- Pagination runs off the main thread (`Dispatchers.Default`); verse-anchored long-press
+  commentary is deferred until commentary is ported.
 
 ### Global index — `data/index/` (Room)
 

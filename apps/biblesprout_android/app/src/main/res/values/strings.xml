@@ -4,6 +4,8 @@
     <string name="loading">Loading…</string>
     <string name="find">Find</string>
     <string name="continue_reading">Continue reading</string>
+    <string name="back">Back</string>
+    <string name="contents">Contents</string>
     <string name="previous_page">Previous page</string>
     <string name="next_page">Next page</string>
     <string name="old_testament">Old Testament</string>
@@ -14,4 +16,6 @@
     <string name="page_indicator">%1$d / %2$d</string>
     <!-- %1$s = book name, %2$d = chapter number -->
     <string name="continue_label">%1$s %2$d</string>
+    <!-- %1$s = book name, %2$d = chapter number -->
+    <string name="reader_title">%1$s %2$d</string>
 </resources>

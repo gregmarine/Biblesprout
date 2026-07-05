@@ -8,5 +8,7 @@
         <item name="colorAccent">@color/eink_black</item>
         <item name="android:textColorPrimary">@color/eink_black</item>
         <item name="android:fontFamily">@font/noto_serif</item>
+        <!-- No activity open/close animation: motion ghosts on e-ink. -->
+        <item name="android:windowAnimationStyle">@null</item>
     </style>
 </resources>

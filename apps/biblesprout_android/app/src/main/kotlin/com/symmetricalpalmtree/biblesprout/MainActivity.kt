@@ -1,5 +1,6 @@
 package com.symmetricalpalmtree.biblesprout
 
+import android.content.Intent
 import android.os.Bundle
 import android.view.View
 import android.widget.LinearLayout
@@ -16,6 +17,8 @@ import com.symmetricalpalmtree.biblesprout.data.index.ReadingPosition
 import com.symmetricalpalmtree.biblesprout.databinding.ActivityMainBinding
 import com.symmetricalpalmtree.biblesprout.model.Bible
 import com.symmetricalpalmtree.biblesprout.model.Book
+import com.symmetricalpalmtree.biblesprout.ui.ChaptersActivity
+import com.symmetricalpalmtree.biblesprout.ui.ReaderActivity
 import kotlinx.coroutines.launch
 
 /**
@@ -33,6 +36,7 @@ class MainActivity : AppCompatActivity() {
     private var current = 0
     private var lastPaginatedHeight = 0
     private var booted = false
+    private var continuePosition: ReadingPosition? = null
 
     private val labelHeightPx by lazy { dp(54) }
     private val bookHeightPx by lazy { dp(62) }
@@ -52,8 +56,7 @@ class MainActivity : AppCompatActivity() {
             Toast.makeText(this, "Find — coming soon", Toast.LENGTH_SHORT).show()
         }
         binding.continueBanner.setOnClickListener {
-            // TODO: open the reader at the saved position once it exists.
-            Toast.makeText(this, "Reader — coming soon", Toast.LENGTH_SHORT).show()
+            continuePosition?.let { startReader(it.bookIndex, it.chapterNumber, it.page) }
         }
 
         // Re-paginate whenever the pager's height changes (e.g. the continue
@@ -93,6 +96,7 @@ class MainActivity : AppCompatActivity() {
 
     private suspend fun applyContinueBanner() {
         val pos = AppServices.readingPosition.latest()
+        continuePosition = pos
         if (pos == null) {
             binding.continueBanner.visibility = View.GONE
         } else {
@@ -179,12 +183,19 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun openBook(book: Book) {
-        // Interim: with no chapters/reader screen yet, tapping a book records it
-        // as the continue-reading position (real navigation will replace this).
-        lifecycleScope.launch {
-            AppServices.readingPosition.save(ReadingPosition(book.index, 1, 0))
-            refreshContinueBanner()
-        }
+        startActivity(
+            Intent(this, ChaptersActivity::class.java)
+                .putExtra(ChaptersActivity.EXTRA_BOOK_INDEX, book.index),
+        )
+    }
+
+    private fun startReader(bookIndex: Int, chapter: Int, page: Int) {
+        startActivity(
+            Intent(this, ReaderActivity::class.java)
+                .putExtra(ReaderActivity.EXTRA_BOOK_INDEX, bookIndex)
+                .putExtra(ReaderActivity.EXTRA_CHAPTER, chapter)
+                .putExtra(ReaderActivity.EXTRA_START_PAGE, page),
+        )
     }
 
     private fun setArrow(view: android.widget.ImageView, enabled: Boolean) {

@@ -10,17 +10,19 @@ import '../models/bible.dart';
 import '../services/reading_position.dart';
 import 'app_database.dart';
 import 'bible_database.dart';
+import 'commentary_database.dart';
 
 /// Everything the UI needs, assembled once at startup: the in-memory [Bible],
 /// the open source and index databases, and the reading-position store.
 ///
 /// [bootstrap] initialises the bundled SQLite engine, installs the read-only
-/// `bsb.bible` source into writable storage, opens the global `biblesprout.db`
-/// index, registers the source, and migrates any pre-database reading position.
+/// source databases into writable storage, opens the global `biblesprout.db`
+/// index, registers the sources, and migrates any pre-database reading position.
 class AppServices {
   AppServices({
     required this.bible,
     required this.bibleDb,
+    required this.commentaryDb,
     required this.appDb,
     required this.positionStore,
     required this.initialPosition,
@@ -28,11 +30,16 @@ class AppServices {
 
   final Bible bible;
   final BibleDatabase bibleDb;
+
+  /// The installed commentary, or null if none is bundled/openable.
+  final CommentaryDatabase? commentaryDb;
+
   final AppDatabase appDb;
   final ReadingPositionStore positionStore;
   final ReadingPosition? initialPosition;
 
   static const _bibleAsset = 'assets/bible/bsb.bible';
+  static const _commentaryAsset = 'assets/commentaries/mhcc.commentary';
 
   static Future<AppServices> bootstrap() async {
     // Use the bundled SQLite (sqlite3_flutter_libs), which includes FTS5 —
@@ -58,16 +65,44 @@ class AppServices {
       versification: bibleDb.metadata['versification'] ?? 'english',
     ));
 
+    final commentaryDb = await _openCommentary(dir.path, appDb);
+
     final store = ReadingPositionStore(appDb, bibleDb.id);
     await _migrateLegacyPosition(store);
 
     return AppServices(
       bible: bible,
       bibleDb: bibleDb,
+      commentaryDb: commentaryDb,
       appDb: appDb,
       positionStore: store,
       initialPosition: await store.load(),
     );
+  }
+
+  /// Installs and opens the bundled commentary, registering it as a source.
+  /// Returns null (rather than failing startup) if it isn't available.
+  static Future<CommentaryDatabase?> _openCommentary(
+    String dirPath,
+    AppDatabase appDb,
+  ) async {
+    try {
+      final path = p.join(dirPath, 'mhcc.commentary');
+      await _installAsset(_commentaryAsset, path);
+      final db = await CommentaryDatabase.openFile(path);
+      await appDb.registerSource(SourceRecord(
+        id: db.id,
+        type: db.metadata['type'] ?? 'commentary',
+        title: db.title,
+        abbreviation: db.metadata['abbreviation'] ?? '',
+        language: db.metadata['language'] ?? 'en',
+        fileName: p.basename(path),
+        versification: db.metadata['versification'] ?? 'english',
+      ));
+      return db;
+    } catch (_) {
+      return null;
+    }
   }
 
   /// Copies a bundled DB asset to writable storage, overwriting when the

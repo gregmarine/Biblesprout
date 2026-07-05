@@ -31,6 +31,7 @@ class _BiblesproutAppState extends State<BiblesproutApp> {
           return LibraryScreen(
             bible: services.bible,
             bibleDb: services.bibleDb,
+            commentaryDb: services.commentaryDb,
             store: services.positionStore,
             lastPosition: services.initialPosition,
           );

@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 
+import '../data/commentary_database.dart';
 import '../models/bible.dart';
+import '../models/reference.dart';
+import '../screens/commentary_screen.dart';
 import '../services/reading_position.dart';
 import '../theme/eink_theme.dart';
 import 'paginator.dart';
@@ -15,12 +18,18 @@ class ReaderScreen extends StatefulWidget {
     required this.bible,
     required this.store,
     required this.start,
+    this.commentaryDb,
     this.startPage = 0,
     this.startVerse,
   });
 
   final Bible bible;
   final ReadingPositionStore store;
+
+  /// The installed commentary, or null. When present, the reader offers a
+  /// "Notes" affordance opening the chapter's commentary.
+  final CommentaryDatabase? commentaryDb;
+
   final ChapterRef start;
   final int startPage;
 
@@ -240,6 +249,26 @@ class _ReaderScreenState extends State<ReaderScreen> {
 
   void _openToc() => Navigator.of(context).popUntil((r) => r.isFirst);
 
+  /// Opens the installed commentary for the chapter currently in view.
+  Future<void> _openCommentary() async {
+    final db = widget.commentaryDb;
+    if (db == null) return;
+    final ordinal = _ref.bookIndex + 1;
+    final (start, end) =
+        VerseKey.chapterBounds(ordinal, _ref.chapterNumber);
+    final entries = await db.entriesForRange(start, end);
+    if (!mounted || entries.isEmpty) return;
+    final abbr = db.metadata['abbreviation'] ?? 'Notes';
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => CommentaryScreen(
+          title: '$abbr · ${_book.name} ${_chapter.number}',
+          entries: entries,
+        ),
+      ),
+    );
+  }
+
   // --- Build ----------------------------------------------------------------
 
   @override
@@ -268,6 +297,8 @@ class _ReaderScreenState extends State<ReaderScreen> {
                         title: '${_book.name} ${_chapter.number}',
                         onBack: () => Navigator.of(context).pop(),
                         onContents: _openToc,
+                        onNotes:
+                            widget.commentaryDb != null ? _openCommentary : null,
                       ),
                     ),
                     SizedBox(
@@ -368,11 +399,15 @@ class _TopBar extends StatelessWidget {
     required this.title,
     required this.onBack,
     required this.onContents,
+    this.onNotes,
   });
 
   final String title;
   final VoidCallback onBack;
   final VoidCallback onContents;
+
+  /// When non-null, a "Notes" affordance opens the chapter's commentary.
+  final VoidCallback? onNotes;
 
   @override
   Widget build(BuildContext context) {
@@ -409,6 +444,22 @@ class _TopBar extends StatelessWidget {
               ),
             ),
           ),
+          if (onNotes != null)
+            GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: onNotes,
+              child: const Padding(
+                padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                child: Text(
+                  'Notes',
+                  style: TextStyle(
+                    fontFamily: Eink.fontFamily,
+                    fontSize: 14,
+                    color: Eink.rule,
+                  ),
+                ),
+              ),
+            ),
           GestureDetector(
             behavior: HitTestBehavior.opaque,
             onTap: onContents,

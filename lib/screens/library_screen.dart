@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../data/bible_database.dart';
+import '../data/commentary_database.dart';
 import '../models/bible.dart';
 import '../reader/reader_screen.dart';
 import '../services/reading_position.dart';
@@ -20,12 +21,14 @@ class LibraryScreen extends StatefulWidget {
     super.key,
     required this.bible,
     required this.bibleDb,
+    required this.commentaryDb,
     required this.store,
     this.lastPosition,
   });
 
   final Bible bible;
   final BibleDatabase bibleDb;
+  final CommentaryDatabase? commentaryDb;
   final ReadingPositionStore store;
   final ReadingPosition? lastPosition;
 
@@ -55,6 +58,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
         builder: (_) => ChaptersScreen(
           bible: widget.bible,
           store: widget.store,
+          commentaryDb: widget.commentaryDb,
           book: book,
         ),
       ),
@@ -68,6 +72,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
         builder: (_) => FindScreen(
           bible: widget.bible,
           bibleDb: widget.bibleDb,
+          commentaryDb: widget.commentaryDb,
           store: widget.store,
         ),
       ),
@@ -84,6 +89,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
         builder: (_) => ReaderScreen(
           bible: widget.bible,
           store: widget.store,
+          commentaryDb: widget.commentaryDb,
           start: ChapterRef(pos.bookIndex, pos.chapterNumber),
           startPage: pos.page,
         ),

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../data/bible_database.dart';
 import '../data/canon.dart';
+import '../data/commentary_database.dart';
 import '../models/bible.dart';
 import '../models/reference.dart';
 import '../reader/reader_screen.dart';
@@ -22,11 +23,13 @@ class FindScreen extends StatefulWidget {
     super.key,
     required this.bible,
     required this.bibleDb,
+    required this.commentaryDb,
     required this.store,
   });
 
   final Bible bible;
   final BibleDatabase bibleDb;
+  final CommentaryDatabase? commentaryDb;
   final ReadingPositionStore store;
 
   @override
@@ -94,6 +97,7 @@ class _FindScreenState extends State<FindScreen> {
         builder: (_) => ReaderScreen(
           bible: widget.bible,
           store: widget.store,
+          commentaryDb: widget.commentaryDb,
           start: ChapterRef(book.ordinal - 1, hit.chapter),
           startVerse: hit.verse,
         ),

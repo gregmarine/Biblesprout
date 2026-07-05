@@ -50,7 +50,22 @@ const _configs = <String, _Config>{
     inputs: ['assets/commentaries/mhcc.xml'],
     out: 'assets/commentaries/mhcc.commentary',
   ),
-  // 'mhc' (Complete, six volumes) can be added here later with the same parser.
+  'mhc': _Config(
+    id: 'mhc',
+    title: "Matthew Henry's Complete Commentary",
+    abbreviation: 'MHC',
+    // The unabridged commentary ships as six volumes; concatenated in canon
+    // order they cover Genesis through Revelation.
+    inputs: [
+      'assets/commentaries/mhc1.xml', // Genesis–Deuteronomy
+      'assets/commentaries/mhc2.xml', // Joshua–Esther
+      'assets/commentaries/mhc3.xml', // Job–Song of Solomon
+      'assets/commentaries/mhc4.xml', // Isaiah–Malachi
+      'assets/commentaries/mhc5.xml', // Matthew–John
+      'assets/commentaries/mhc6.xml', // Acts–Revelation
+    ],
+    out: 'assets/commentaries/mhc.commentary',
+  ),
 };
 
 void main(List<String> args) {
@@ -178,6 +193,11 @@ List<_Entry> _parseThml(String raw) {
         chapter = currentChapter != 0 ? currentChapter : cv.$1;
         startVerse = cv.$2;
       case 'h3':
+      case 'h4':
+        // The Concise labels sections with <h3> ("Verses 1-8"); the Complete
+        // uses <h4> ("The Genealogy of Christ."). Take the first heading that
+        // follows a marker as the section's own; chapter/book titles arrive
+        // while book == null and are ignored.
         if (book != null && heading == null) {
           final h = _clean(el.innerText);
           if (h.isNotEmpty) heading = h;
@@ -186,6 +206,11 @@ List<_Entry> _parseThml(String raw) {
         if (el.ancestors.whereType<XmlElement>().any((a) => a.name.local == 'table')) {
           break; // chapter-outline table, not commentary prose
         }
+        // The Complete edition embeds the quoted scripture and page/book
+        // navigation as classed paragraphs; those aren't commentary and would
+        // duplicate the whole Bible, so skip them. (The Concise has no such
+        // classes, so this is a no-op there.)
+        if (_skipParaClasses.contains(el.getAttribute('class'))) break;
         final t = _clean(el.innerText);
         if (t.isEmpty) break;
         // Prose with no preceding marker (e.g. Psalm 23, whose scripCom is
@@ -253,10 +278,37 @@ void _resolveCoverage(List<_Entry> entries) {
 /// Collapses ThML whitespace (line wraps, tabs) into single spaces.
 String _clean(String s) => s.replaceAll(RegExp(r'\s+'), ' ').trim();
 
-/// Extracts the chapter number from a div2 title like "Chapter 23".
+/// `<p class>` values that are quoted scripture or navigation, not commentary.
+/// Only the Complete edition uses these; excluding them keeps the Bible text
+/// out of the commentary body (and the file to a sane size).
+const _skipParaClasses = {'passage', 'bbook', 'bref', 'pages'};
+
+/// Extracts the chapter number from a div2 title. The Concise numbers chapters
+/// in Arabic ("Chapter 23"); the Complete uses Roman numerals ("Chapter XXIII").
 int _chapterNum(String title) {
-  final m = RegExp(r'(\d+)').firstMatch(title);
-  return m == null ? 0 : int.parse(m.group(1)!);
+  final arabic = RegExp(r'(\d+)').firstMatch(title);
+  if (arabic != null) return int.parse(arabic.group(1)!);
+  final roman = RegExp(r'\b([ivxlcIVXLC]+)\b').firstMatch(title);
+  return roman == null ? 0 : _fromRoman(roman.group(1)!.toUpperCase());
+}
+
+/// Parses a Roman numeral (chapters run up to 150 for Psalms). Returns 0 if the
+/// string isn't a well-formed numeral.
+int _fromRoman(String s) {
+  const values = {'I': 1, 'V': 5, 'X': 10, 'L': 50, 'C': 100, 'D': 500, 'M': 1000};
+  var total = 0;
+  var prev = 0;
+  for (var i = s.length - 1; i >= 0; i--) {
+    final v = values[s[i]];
+    if (v == null) return 0;
+    if (v < prev) {
+      total -= v;
+    } else {
+      total += v;
+      prev = v;
+    }
+  }
+  return total;
 }
 
 void _createSchema(Database db) {

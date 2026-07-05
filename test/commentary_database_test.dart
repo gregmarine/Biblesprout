@@ -84,4 +84,59 @@ void main() {
       expect(hits.first.body.toLowerCase(), contains('shepherd'));
     });
   });
+
+  group('CommentaryDatabase (mhc.commentary — Complete)', () {
+    late CommentaryDatabase db;
+
+    setUpAll(() async {
+      final file = File('assets/commentaries/mhc.commentary').absolute;
+      if (!file.existsSync()) {
+        fail('Missing ${file.path} — run: '
+            'dart run tool/build_commentary_db.dart mhc');
+      }
+      db = await CommentaryDatabase.openFile(file.path);
+    });
+
+    tearDownAll(() => db.close());
+
+    int key(int ordinal, int chapter, int verse) =>
+        VerseKey.encode(ordinal, chapter, verse);
+
+    test('metadata identifies Matthew Henry Complete', () {
+      expect(db.id, 'mhc');
+      expect(db.title, "Matthew Henry's Complete Commentary");
+      expect(db.metadata['type'], 'commentary');
+    });
+
+    test('covers a verse from the first and last volume', () async {
+      // Genesis 1 (vol. 1) and Revelation 22 (vol. 6) both resolve.
+      expect(await db.entriesForVerse(key(1, 1, 1)), isNotEmpty);
+      expect(await db.entriesForVerse(key(66, 22, 1)), isNotEmpty);
+    });
+
+    test('John 15 has descriptive section headings', () async {
+      final hits = await db.entriesForRange(key(43, 15, 1), key(43, 15, 27));
+      expect(hits, isNotEmpty);
+      expect(hits.any((e) => e.heading == 'Christ the True Vine.'), isTrue);
+    });
+
+    test('Roman-numeral chapters resolve (Psalm 119 = chapter CXIX)', () async {
+      final hits = await db.entriesForVerse(key(19, 119, 1));
+      expect(hits, isNotEmpty);
+      expect(hits.first.usfm, 'PSA');
+      expect(hits.first.chapter, 119);
+    });
+
+    test('body holds exposition, not the quoted scripture text', () async {
+      final hits = await db.entriesForVerse(key(43, 15, 1));
+      expect(hits, isNotEmpty);
+      // The KJV wording of John 15:1 is embedded in the source as a <p
+      // class="passage"> block that we deliberately drop; only Henry's
+      // exposition should remain.
+      expect(
+        hits.first.body,
+        isNot(contains('I am the true vine, and my Father is the husbandman')),
+      );
+    });
+  });
 }

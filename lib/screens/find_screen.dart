@@ -23,13 +23,13 @@ class FindScreen extends StatefulWidget {
     super.key,
     required this.bible,
     required this.bibleDb,
-    required this.commentaryDb,
+    required this.commentaries,
     required this.store,
   });
 
   final Bible bible;
   final BibleDatabase bibleDb;
-  final CommentaryDatabase? commentaryDb;
+  final List<CommentaryDatabase> commentaries;
   final ReadingPositionStore store;
 
   @override
@@ -97,7 +97,7 @@ class _FindScreenState extends State<FindScreen> {
         builder: (_) => ReaderScreen(
           bible: widget.bible,
           store: widget.store,
-          commentaryDb: widget.commentaryDb,
+          commentaries: widget.commentaries,
           start: ChapterRef(book.ordinal - 1, hit.chapter),
           startVerse: hit.verse,
         ),

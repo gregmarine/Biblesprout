@@ -67,9 +67,11 @@ flutter:
     # `dart run tool/build_bible_db.dart`). bsb.txt stays in the repo as the
     # human-editable source of truth but is no longer bundled.
     - assets/bible/bsb.bible
-    # Matthew Henry's Concise Commentary, built by tool/build_commentary_db.dart
-    # from assets/commentaries/mhcc.xml (public domain, CCEL).
+    # Matthew Henry's commentaries, built by tool/build_commentary_db.dart from
+    # the CCEL ThML sources (public domain): Concise (mhcc) and the six-volume
+    # Complete (mhc). The reader offers a picker between them.
     - assets/commentaries/mhcc.commentary
+    - assets/commentaries/mhc.commentary
 
   fonts:
     - family: NotoSerif

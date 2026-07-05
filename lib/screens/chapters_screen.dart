@@ -16,13 +16,13 @@ class ChaptersScreen extends StatelessWidget {
     super.key,
     required this.bible,
     required this.store,
-    required this.commentaryDb,
+    required this.commentaries,
     required this.book,
   });
 
   final Bible bible;
   final ReadingPositionStore store;
-  final CommentaryDatabase? commentaryDb;
+  final List<CommentaryDatabase> commentaries;
   final Book book;
 
   static const double _pad = 20;
@@ -35,7 +35,7 @@ class ChaptersScreen extends StatelessWidget {
         builder: (_) => ReaderScreen(
           bible: bible,
           store: store,
-          commentaryDb: commentaryDb,
+          commentaries: commentaries,
           start: ChapterRef(book.index, chapterNumber),
         ),
       ),

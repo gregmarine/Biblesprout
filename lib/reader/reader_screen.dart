@@ -18,7 +18,7 @@ class ReaderScreen extends StatefulWidget {
     required this.bible,
     required this.store,
     required this.start,
-    this.commentaryDb,
+    this.commentaries = const [],
     this.startPage = 0,
     this.startVerse,
   });
@@ -26,9 +26,10 @@ class ReaderScreen extends StatefulWidget {
   final Bible bible;
   final ReadingPositionStore store;
 
-  /// The installed commentary, or null. When present, the reader offers a
-  /// "Notes" affordance opening the chapter's commentary.
-  final CommentaryDatabase? commentaryDb;
+  /// The installed commentaries. When non-empty, the reader offers a "Notes"
+  /// affordance opening the chapter's commentary; with more than one, tapping
+  /// it first shows a picker.
+  final List<CommentaryDatabase> commentaries;
 
   final ChapterRef start;
   final int startPage;
@@ -249,21 +250,86 @@ class _ReaderScreenState extends State<ReaderScreen> {
 
   void _openToc() => Navigator.of(context).popUntil((r) => r.isFirst);
 
-  /// Opens the installed commentary for the chapter currently in view.
+  /// Opens a commentary for the chapter currently in view. With more than one
+  /// installed, first shows a picker; with one, opens it directly.
   Future<void> _openCommentary() async {
-    final db = widget.commentaryDb;
-    if (db == null) return;
+    final available = widget.commentaries;
+    if (available.isEmpty) return;
+    final db = available.length == 1
+        ? available.first
+        : await _pickCommentary(available);
+    if (db == null || !mounted) return;
+
     final ordinal = _ref.bookIndex + 1;
-    final (start, end) =
-        VerseKey.chapterBounds(ordinal, _ref.chapterNumber);
+    final (start, end) = VerseKey.chapterBounds(ordinal, _ref.chapterNumber);
     final entries = await db.entriesForRange(start, end);
-    if (!mounted || entries.isEmpty) return;
+    if (!mounted) return;
     final abbr = db.metadata['abbreviation'] ?? 'Notes';
     await Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => CommentaryScreen(
           title: '$abbr · ${_book.name} ${_chapter.number}',
           entries: entries,
+        ),
+      ),
+    );
+  }
+
+  /// Presents the installed commentaries as a full-refresh list dialog and
+  /// returns the chosen one (null if dismissed).
+  Future<CommentaryDatabase?> _pickCommentary(
+    List<CommentaryDatabase> options,
+  ) {
+    return showDialog<CommentaryDatabase>(
+      context: context,
+      // No dim scrim on e-ink; the hard black border delineates the panel.
+      barrierColor: Colors.transparent,
+      builder: (context) => Dialog(
+        backgroundColor: Eink.white,
+        elevation: 0,
+        shape: RoundedRectangleBorder(
+          side: const BorderSide(color: Eink.black, width: 2),
+          borderRadius: BorderRadius.circular(4),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const Padding(
+              padding: EdgeInsets.fromLTRB(20, 18, 20, 12),
+              child: Text(
+                'Commentary',
+                style: TextStyle(
+                  fontFamily: Eink.fontFamily,
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
+                  color: Eink.black,
+                ),
+              ),
+            ),
+            for (final db in options)
+              GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: () => Navigator.of(context).pop(db),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 20,
+                    vertical: 16,
+                  ),
+                  decoration: const BoxDecoration(
+                    border: Border(top: BorderSide(color: Eink.rule)),
+                  ),
+                  child: Text(
+                    db.title,
+                    style: const TextStyle(
+                      fontFamily: Eink.fontFamily,
+                      fontSize: 18,
+                      color: Eink.black,
+                    ),
+                  ),
+                ),
+              ),
+          ],
         ),
       ),
     );
@@ -297,8 +363,9 @@ class _ReaderScreenState extends State<ReaderScreen> {
                         title: '${_book.name} ${_chapter.number}',
                         onBack: () => Navigator.of(context).pop(),
                         onContents: _openToc,
-                        onNotes:
-                            widget.commentaryDb != null ? _openCommentary : null,
+                        onNotes: widget.commentaries.isNotEmpty
+                            ? _openCommentary
+                            : null,
                       ),
                     ),
                     SizedBox(

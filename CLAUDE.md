@@ -57,15 +57,25 @@ same integer a source does. Books are keyed by **USFM code** (`GEN`…`REV`).
   in-memory `Bible`, plus `search()` (FTS5), `versesInRange()` and `versesForPassage()`.
 - `lib/data/commentary_database.dart` — read-only accessor for a `*.commentary` source
   (verse-range comment entries): `entriesForVerse()`/`entriesForRange()` by verse-key
-  containment + FTS5 `search()`. **Built but not yet wired into the app/bootstrap** — a source
-  DB + accessor + tests exist; showing commentary in the UI is a follow-up.
-- `tool/build_commentary_db.dart` — dev-time builder for `*.commentary` from CCEL ThML
-  (`dart run tool/build_commentary_db.dart mhcc`). `assets/commentaries/mhcc.xml` (Matthew
-  Henry's Concise, public domain) → `assets/commentaries/mhcc.commentary`. The parser is a
-  document-order state machine keyed on `<scripCom>` markers; it trusts the `<div1>` book
-  heading over `osisRef` (which mis-tags e.g. Jude→Judg) and falls back to whole-chapter prose
-  where a marker is missing (e.g. Psalm 23), giving full 1189/1189-chapter coverage. The
-  Complete commentary (six volumes) can be added under the same tool later.
+  containment + FTS5 `search()`. **Wired:** `bootstrap()` opens every bundled commentary into
+  `AppServices.commentaries`, threaded through library → chapters/find → reader. The reader's
+  top bar has a **Notes** affordance (shown when ≥1 commentary is installed) that opens the
+  current chapter's commentary in a `FlowingDocument`; with more than one installed it first
+  shows a bordered picker (`_pickCommentary`). `lib/screens/commentary_screen.dart` renders the
+  entries (heading + flowing body).
+- `tool/build_commentary_db.dart` — dev-time builder for `*.commentary` from CCEL ThML.
+  Two Matthew Henry commentaries (public domain, CCEL), both at full 1189/1189-chapter coverage:
+  - **Concise** — `dart run tool/build_commentary_db.dart mhcc`: `assets/commentaries/mhcc.xml`
+    → `mhcc.commentary` (~6MB).
+  - **Complete** — `dart run tool/build_commentary_db.dart mhc`: six volumes
+    `assets/commentaries/mhc1.xml`…`mhc6.xml` → `mhc.commentary` (~50MB).
+
+  The parser is a document-order state machine keyed on `<scripCom>` markers; it trusts the
+  `<div1>` book heading over `osisRef` (which mis-tags e.g. Jude→Judg) and falls back to
+  whole-chapter prose where a marker is missing (e.g. Psalm 23). The Complete edition also needs:
+  Roman-numeral chapter titles (`Chapter XXIII`), skipping the quoted-scripture `<p class>` runs
+  (`passage`/`bbook`/`bref`/`pages`) so the Bible text isn't duplicated into commentary bodies,
+  and `<h4>` section headings (the Concise uses `<h3>`).
 - `lib/data/app_database.dart` — the global index (`biblesprout.db`): source registry +
   reading progress (wired), and schema for bookmarks/highlights/notes/cross-links (not yet
   exercised). All annotations address scripture by verse-key spans (`start_key`/`end_key`).

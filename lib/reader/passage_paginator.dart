@@ -51,7 +51,8 @@ class PassagePaginator {
       remaining = pageHeight;
     }
 
-    // A single body line, used for the heading keep-with-next check.
+    // A single body line, used for the heading keep-with-next check and as the
+    // per-block rendering reserve below.
     final lineHeight = Paginator.measureHeight(
       atoms: const [WordAtom('Ag')],
       start: 0,
@@ -76,10 +77,16 @@ class PassagePaginator {
           final atoms = text.atoms;
           var idx = 0;
           while (idx < atoms.length) {
+            // Each rendered text block can wrap to one line more than
+            // TextPainter measures (RenderParagraph vs TextPainter diverge by up
+            // to a line at the device's pixel ratio). Reserve a line per block
+            // so the packed height stays an upper bound of what renders — this
+            // is what keeps heading pages, which carry two text blocks, from
+            // overflowing.
             final count = Paginator.fitCount(
               atoms: atoms,
               start: idx,
-              maxHeight: remaining,
+              maxHeight: remaining - lineHeight,
               bodyStyle: bodyStyle,
               numberStyle: numberStyle,
               width: width,
@@ -105,7 +112,7 @@ class PassagePaginator {
             );
             current.add(TextItem(atoms.sublist(idx, idx + count)));
             idx += count;
-            remaining -= used;
+            remaining -= used + lineHeight;
             if (idx < atoms.length) commit();
           }
       }

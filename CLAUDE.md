@@ -28,7 +28,13 @@ Display Berean Standard Bible text on e-ink with page-flipping and a table of co
   reader (not a list): a "John 3" heading, superscript verse numbers, verses flowing together;
   a fresh heading is inserted inline where the passage crosses a chapter/book; paginates if
   long. `lib/reader/passage_paginator.dart` packs heading + text blocks into pages, reusing
-  `Paginator.fitCount`/`measureHeight` so heights match the reader.
+  `Paginator.fitCount`/`measureHeight` so heights match the reader. It reserves **one body line
+  per text block** while packing: a rendered `Text` block can wrap to one line more than
+  `TextPainter` measures (`RenderParagraph` vs `TextPainter` diverge by up to a line at the
+  device pixel ratio), so a page carrying two text blocks around a mid-page heading would
+  otherwise overflow — the reserve keeps the packed height an upper bound of what renders. The
+  reader escapes this because each page is a single block (its `_safetyPad` absorbs the drift);
+  `FlowingDocument`'s `_safetyPad` is correspondingly small since the per-block reserve does the work.
 
 ## Data layer (SQLite)
 

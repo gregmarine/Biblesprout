@@ -52,7 +52,12 @@ class _FlowingDocumentState extends State<FlowingDocument> {
   static const double _vPadding = 10;
   static const double _headerHeight = 56;
   static const double _footerHeight = 44;
-  static const double _safetyPad = 48;
+
+  // Small cushion for sub-pixel line-height rounding. The larger source of
+  // drift — a rendered text block wrapping to one line more than TextPainter
+  // measures — is handled per-block inside [PassagePaginator], so this only
+  // needs to cover rounding, not a whole line.
+  static const double _safetyPad = 12;
 
   int _page = 0;
   int _turnsSinceRefresh = 0;

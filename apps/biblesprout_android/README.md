@@ -5,14 +5,38 @@ Native Android port of Biblesprout. Replaces the Flutter implementation kept (fr
 
 ## Status
 
-**Reader + Find working end-to-end on the BOOX Go 6.** Library → chapters grid → paginated
-reader, and Find → passage/search, all run and verified on-device. The library (`MainActivity`,
-`ui/SwipePager`, `data/AppServices`) paginates the 66 books OT/NT with a "Continue reading"
-banner from the index; `ui/ChaptersActivity` is the paginated chapter-number grid;
-`ui/ReaderActivity` + the `reader/` package are the paginated reader — superscript verse
-numbers, a book/chapter heading on each chapter's first page, tap-thirds / swipe page turns that
-flow across chapter and book boundaries, position persistence, and a black full-refresh flash
-every 6 turns. Next: commentary, and the downloadable-sources model.
+**Reader + Find + Commentary working end-to-end on the BOOX Go 6.** Library → chapters grid →
+paginated reader, Find → passage/search, and commentary (chapter, passage, and verse-anchored)
+all run and verified on-device. The library (`MainActivity`, `ui/SwipePager`, `data/AppServices`)
+paginates the 66 books OT/NT with a "Continue reading" banner from the index;
+`ui/ChaptersActivity` is the paginated chapter-number grid; `ui/ReaderActivity` + the `reader/`
+package are the paginated reader — superscript verse numbers, a book/chapter heading on each
+chapter's first page, tap-thirds / swipe page turns that flow across chapter and book boundaries,
+position persistence, and a black full-refresh flash every 6 turns. Next: the downloadable-sources
+model (to bring in the six-volume Complete commentary), then annotations.
+
+### Commentary — `ui/CommentaryActivity`, `reader/CommentaryLauncher`, `data/CommentaryDatabase`
+
+Matthew Henry's Concise (`mhcc`, ~6 MB) ships in the APK; the six-volume Complete (`mhc`, ~50 MB)
+waits for the download model. A "Notes" affordance in the reader and passage top bars opens
+commentary for the chapter / passage in view, and a **long-press** on any verse opens commentary
+for just that verse (the superscript number is too small a tap target on e-ink, and tap/swipe are
+already page turns).
+
+- `data/CommentaryDatabase` addresses comments by the same canonical verse keys as the Bible, so
+  `entriesForRange()` answers "what covers this span" with an overlap test. `AppServices` installs
+  and opens every bundled commentary, registers each as a source, and exposes them plus
+  `CommentaryPreferences` (last-used id, persisted in the index's key/value store).
+- `reader/CommentaryLauncher` is the shared entry point: with >1 commentary installed it opens the
+  last-used one directly and shows a hard-bordered, scrimless picker only on first use (with a
+  single commentary the picker and "Change" action never appear). It gathers de-duplicated entries
+  over the given ranges and starts `ui/CommentaryActivity`, which re-resolves and renders them
+  through the same `PassagePaginator` + `FlowingView` as the passage view (a comment's section
+  heading — "Verses 1–5" — introduces its prose).
+- Verse anchoring: a press is hit-tested against the drawn `StaticLayout`
+  (`getOffsetForHorizontal`) and mapped back to a verse key by `ReaderTypography.verseKeyAtOffset`,
+  which retraces the exact character offsets the reader's spannable lays down. The passage view's
+  `FlowingView` first finds which stacked text element the press fell in.
 
 ### Find — `ui/FindActivity`, `ui/PassageActivity`, `data/Reference.kt`
 
@@ -47,8 +71,8 @@ grows its line), and sizes are in **sp** so the BOOX's 0.85 font scale is honour
   the most atoms that fit each page (first page reserves the heading).
 - `ReaderTypography` — fonts, sizes, spannable building (superscript spans), StaticLayout config.
 - `ReaderView` — draws a `ReaderPage` (optional heading + body) with the reader's padding.
-- Pagination runs off the main thread (`Dispatchers.Default`); verse-anchored long-press
-  commentary is deferred until commentary is ported.
+- Pagination runs off the main thread (`Dispatchers.Default`); a long-press opens verse-anchored
+  commentary (see the Commentary section).
 
 ### Global index — `data/index/` (Room)
 
@@ -69,8 +93,8 @@ needs no FTS5 and holds no sensitive data — the read-only content DBs use SQLC
 - `BibleDatabase` — opens a `.bible` plaintext; `loadBible()`, `search()` (FTS5),
   `versesInRange()`, `versesForRanges()`. Returns `VerseHit`s.
 - `CommentaryDatabase` — opens a `.commentary` plaintext; `entriesForVerse()`,
-  `entriesForRange()`, `search()`. Returns `CommentaryEntry`s. (Written; not yet exercised
-  on-device — no commentary is bundled while those large DBs await the download model.)
+  `entriesForRange()`, `search()`. Returns `CommentaryEntry`s. Exercised on-device via the
+  bundled Concise commentary (see the Commentary section).
 - `ContentInstaller` — copies bundled asset DBs into writable storage (the seam the future
   downloadable-sources model plugs into).
 - Content DBs use **raw SQLCipher, not Room**: Room validates its schema against the file and

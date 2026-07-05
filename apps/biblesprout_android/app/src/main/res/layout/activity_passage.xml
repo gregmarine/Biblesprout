@@ -37,6 +37,16 @@
                 android:textColor="@color/eink_black"
                 android:textSize="18sp"
                 android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/notes"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:padding="8dp"
+                android:text="@string/notes"
+                android:textColor="@color/eink_rule"
+                android:textSize="14sp"
+                android:visibility="gone" />
         </LinearLayout>
 
         <View

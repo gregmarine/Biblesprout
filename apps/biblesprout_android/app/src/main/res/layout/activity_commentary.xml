@@ -9,7 +9,7 @@
         android:layout_height="match_parent"
         android:orientation="vertical">
 
-        <!-- Top bar: back, chapter title (tap = contents), Contents -->
+        <!-- Top bar: back + commentary title + optional Change action -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="56dp"
@@ -39,32 +39,23 @@
                 android:textStyle="bold" />
 
             <TextView
-                android:id="@+id/notes"
+                android:id="@+id/change"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:padding="8dp"
-                android:text="@string/notes"
+                android:text="@string/change"
                 android:textColor="@color/eink_rule"
                 android:textSize="14sp"
                 android:visibility="gone" />
-
-            <TextView
-                android:id="@+id/contents"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:padding="8dp"
-                android:text="@string/contents"
-                android:textColor="@color/eink_rule"
-                android:textSize="14sp" />
         </LinearLayout>
 
         <View
             android:layout_width="match_parent"
-            android:layout_height="1dp"
-            android:background="@color/eink_rule" />
+            android:layout_height="2dp"
+            android:background="@color/eink_black" />
 
-        <com.symmetricalpalmtree.biblesprout.reader.ReaderView
-            android:id="@+id/reader"
+        <com.symmetricalpalmtree.biblesprout.reader.FlowingView
+            android:id="@+id/flow"
             android:layout_width="match_parent"
             android:layout_height="0dp"
             android:layout_weight="1" />
@@ -83,7 +74,6 @@
             android:textSize="13sp" />
     </LinearLayout>
 
-    <!-- Full-refresh flash: a black frame held briefly to clear e-ink ghosting -->
     <View
         android:id="@+id/flash"
         android:layout_width="match_parent"

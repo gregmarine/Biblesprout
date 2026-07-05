@@ -14,14 +14,19 @@ import androidx.lifecycle.lifecycleScope
 import com.symmetricalpalmtree.biblesprout.MainActivity
 import com.symmetricalpalmtree.biblesprout.R
 import com.symmetricalpalmtree.biblesprout.data.AppServices
+import com.symmetricalpalmtree.biblesprout.data.VerseKey
+import com.symmetricalpalmtree.biblesprout.data.VerseRange
 import com.symmetricalpalmtree.biblesprout.data.index.ReadingPosition
 import com.symmetricalpalmtree.biblesprout.databinding.ActivityReaderBinding
 import com.symmetricalpalmtree.biblesprout.model.ChapterRef
 import com.symmetricalpalmtree.biblesprout.reader.Atom
 import com.symmetricalpalmtree.biblesprout.reader.ChapterPaginator
+import com.symmetricalpalmtree.biblesprout.reader.CommentaryLauncher
 import com.symmetricalpalmtree.biblesprout.reader.NumberAtom
 import com.symmetricalpalmtree.biblesprout.reader.ReaderPage
 import com.symmetricalpalmtree.biblesprout.reader.ReaderTypography
+import android.text.StaticLayout
+import android.view.View
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
@@ -49,6 +54,11 @@ class ReaderActivity : AppCompatActivity() {
     private var turnsSinceRefresh = 0
     private var paginateJob: Job? = null
 
+    // The current page's body layout and its y-origin within the reader view, so a
+    // long-press can be hit-tested back to the verse it fell in.
+    private var currentBody: StaticLayout? = null
+    private var bodyTopPx = 0
+
     private val safetyPad by lazy { typo.dp(8f) }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -73,13 +83,42 @@ class ReaderActivity : AppCompatActivity() {
         binding.back.setOnClickListener { finish() }
         binding.title.setOnClickListener { openContents() }
         binding.contents.setOnClickListener { openContents() }
+        binding.notes.setOnClickListener { openChapterCommentary() }
         attachGestures()
 
         lifecycleScope.launch {
             AppServices.bootstrap(applicationContext)
+            // Offer the Notes affordance only when a commentary is installed.
+            binding.notes.visibility =
+                if (AppServices.commentaries.isNotEmpty()) View.VISIBLE else View.GONE
             persist() // record the opened location immediately
             binding.reader.doOnLayout { repaginate() }
         }
+    }
+
+    /** Opens commentary for the whole chapter in view. */
+    private fun openChapterCommentary() {
+        val ordinal = ref.bookIndex + 1
+        val (lo, hi) = VerseKey.chapterBounds(ordinal, ref.chapterNumber)
+        val book = AppServices.bible.bookAt(ref.bookIndex)
+        CommentaryLauncher.open(
+            this,
+            listOf(VerseRange(lo, hi)),
+            "${book.name} ${ref.chapterNumber}",
+        )
+    }
+
+    /** Opens commentary anchored to the verse under a long-press, if any. */
+    private fun openVerseCommentary(x: Float, y: Float) {
+        val body = currentBody ?: return
+        if (pages.isEmpty()) return
+        val localX = (x - binding.reader.horizontalPad).toInt()
+        val localY = (y - binding.reader.verticalPad - bodyTopPx).toInt()
+        if (localY < 0 || localY > body.height) return
+        val line = body.getLineForVertical(localY)
+        val offset = body.getOffsetForHorizontal(line, localX.toFloat())
+        val key = typo.verseKeyAtOffset(pages[page], offset) ?: return
+        CommentaryLauncher.openVerse(this, key)
     }
 
     // --- Navigation -----------------------------------------------------------
@@ -185,10 +224,14 @@ class ReaderActivity : AppCompatActivity() {
         val body = typo.bodyLayout(pages[page], width)
         binding.reader.page = if (page == 0) {
             val (title, number) = typo.headingLayouts(book.name, chapter.number, width)
+            // The heading pushes the body down on a chapter's first page.
+            bodyTopPx = title.height + typo.gap1 + number.height + typo.gap2
             ReaderPage(body, title, number)
         } else {
+            bodyTopPx = 0
             ReaderPage(body)
         }
+        currentBody = body
         binding.title.text = getString(R.string.reader_title, book.name, chapter.number)
         binding.pageIndicator.text = getString(R.string.page_indicator, page + 1, pages.size)
     }
@@ -208,6 +251,13 @@ class ReaderActivity : AppCompatActivity() {
                     else -> openContents()
                 }
                 return true
+            }
+
+            override fun onLongPress(e: MotionEvent) {
+                // The superscript number is too small a tap target on e-ink, and
+                // tap/swipe already turn pages — so a long-press opens commentary
+                // for the pressed verse.
+                openVerseCommentary(e.x, e.y)
             }
 
             override fun onFling(

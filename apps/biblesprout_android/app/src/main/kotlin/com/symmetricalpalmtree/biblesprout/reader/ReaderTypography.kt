@@ -123,6 +123,32 @@ class ReaderTypography(context: Context) {
     fun passageHeadingLayout(text: String, width: Int): StaticLayout =
         layout(text, passageHeading, width, Layout.Alignment.ALIGN_CENTER)
 
+    /**
+     * The verse key covering character [offset] in [atoms]' rendered body — the
+     * key of the most recent [NumberAtom] at or before that character. Retraces
+     * exactly the offsets [spannable] lays down (a space before every atom but the
+     * first, then the number/word), so a press hit-tested against the drawn
+     * [StaticLayout] maps back to the verse it fell in. Null if none precedes it.
+     */
+    fun verseKeyAtOffset(atoms: List<Atom>, offset: Int): Int? {
+        var pos = 0
+        var key: Int? = null
+        atoms.forEachIndexed { i, atom ->
+            when (atom) {
+                is NumberAtom -> {
+                    if (i > 0) pos += 1 // the joining space
+                    if (pos <= offset) key = atom.verseKey
+                    pos += atom.number.toString().length
+                }
+                is WordAtom -> {
+                    if (i > 0) pos += 1
+                    pos += atom.word.length
+                }
+            }
+        }
+        return key
+    }
+
     companion object {
         const val BLACK = 0xFF000000.toInt()
         private const val EXCL = Spanned.SPAN_EXCLUSIVE_EXCLUSIVE

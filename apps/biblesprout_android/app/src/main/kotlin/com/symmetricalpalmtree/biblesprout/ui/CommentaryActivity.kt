@@ -1,6 +1,8 @@
 package com.symmetricalpalmtree.biblesprout.ui
 
 import android.annotation.SuppressLint
+import android.content.Context
+import android.content.Intent
 import android.os.Bundle
 import android.view.GestureDetector
 import android.view.MotionEvent
@@ -13,17 +15,14 @@ import androidx.core.view.doOnLayout
 import androidx.lifecycle.lifecycleScope
 import com.symmetricalpalmtree.biblesprout.R
 import com.symmetricalpalmtree.biblesprout.data.AppServices
-import com.symmetricalpalmtree.biblesprout.data.Canon
-import com.symmetricalpalmtree.biblesprout.data.Passage
-import com.symmetricalpalmtree.biblesprout.data.ReferenceParser
-import com.symmetricalpalmtree.biblesprout.data.VerseHit
-import com.symmetricalpalmtree.biblesprout.data.VerseKey
-import com.symmetricalpalmtree.biblesprout.databinding.ActivityPassageBinding
+import com.symmetricalpalmtree.biblesprout.data.CommentaryDatabase
+import com.symmetricalpalmtree.biblesprout.data.CommentaryEntry
+import com.symmetricalpalmtree.biblesprout.data.VerseRange
+import com.symmetricalpalmtree.biblesprout.databinding.ActivityCommentaryBinding
 import com.symmetricalpalmtree.biblesprout.reader.Atom
 import com.symmetricalpalmtree.biblesprout.reader.CommentaryLauncher
 import com.symmetricalpalmtree.biblesprout.reader.FlowElement
 import com.symmetricalpalmtree.biblesprout.reader.HeadingItem
-import com.symmetricalpalmtree.biblesprout.reader.NumberAtom
 import com.symmetricalpalmtree.biblesprout.reader.PassageItem
 import com.symmetricalpalmtree.biblesprout.reader.PassagePaginator
 import com.symmetricalpalmtree.biblesprout.reader.ReaderTypography
@@ -36,27 +35,28 @@ import kotlinx.coroutines.withContext
 import kotlin.math.abs
 
 /**
- * A jump-to-passage view: the selected verses rendered as flowing, paginated
- * text — like the chapter reader, not a list. A "John 3" heading sits inline, a
- * fresh heading appears where the passage crosses a chapter/book, and long
- * passages paginate. Ported from the Flutter `passage_screen.dart` +
- * `flowing_document.dart`. Given the raw reference text, it re-resolves the
- * verses so nothing large is passed between screens.
+ * A commentary rendered as flowing, paginated text — the same reading surface as
+ * the passage view. Each comment's section heading (Matthew Henry's "Verses 1–8")
+ * introduces its prose; whole-chapter comments flow with no heading. Given the
+ * chosen commentary's id and the verse-key ranges, it re-resolves the entries so
+ * nothing large is passed between screens. Ported from the Flutter
+ * `commentary_screen.dart`.
  */
-class PassageActivity : AppCompatActivity() {
+class CommentaryActivity : AppCompatActivity() {
 
-    private lateinit var binding: ActivityPassageBinding
+    private lateinit var binding: ActivityCommentaryBinding
     private lateinit var typo: ReaderTypography
 
-    private var passages: List<Passage> = emptyList()
+    private lateinit var ranges: List<VerseRange>
+    private lateinit var reference: String
+    private var allowChange = false
+
+    private var db: CommentaryDatabase? = null
     private var blocks: List<PassageItem> = emptyList()
     private var pages: List<List<PassageItem>> = emptyList()
     private var page = 0
     private var turnsSinceRefresh = 0
     private var paginateJob: Job? = null
-
-    // The current page's drawn elements, parallel to pages[page], for hit-testing.
-    private var currentElements: List<FlowElement> = emptyList()
 
     private val safetyPad by lazy { typo.dp(8f) }
     private val headingTopPad by lazy { typo.dp(18f) }
@@ -64,7 +64,7 @@ class PassageActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        binding = ActivityPassageBinding.inflate(layoutInflater)
+        binding = ActivityCommentaryBinding.inflate(layoutInflater)
         setContentView(binding.root)
         goFullScreenImmersive()
 
@@ -72,85 +72,74 @@ class PassageActivity : AppCompatActivity() {
         binding.flow.horizontalPad = typo.dp(44f)
         binding.flow.verticalPad = typo.dp(10f)
 
+        ranges = readRanges(intent.getIntArrayExtra(EXTRA_RANGES) ?: IntArray(0))
+        reference = intent.getStringExtra(EXTRA_REFERENCE).orEmpty()
+        allowChange = intent.getBooleanExtra(EXTRA_ALLOW_CHANGE, false)
+        val startId = intent.getStringExtra(EXTRA_COMMENTARY_ID)
+
         binding.back.setOnClickListener { finish() }
+        binding.change.visibility = if (allowChange) View.VISIBLE else View.GONE
+        binding.change.setOnClickListener { changeCommentary() }
         attachGestures()
 
-        binding.notes.setOnClickListener { openPassageCommentary() }
-
-        val query = intent.getStringExtra(EXTRA_QUERY).orEmpty()
         lifecycleScope.launch {
             AppServices.bootstrap(applicationContext)
-            passages = ReferenceParser.parseAll(query)
-            binding.title.text = passages.joinToString("; ") { it.format() }
-            binding.notes.visibility =
-                if (AppServices.commentaries.isNotEmpty()) View.VISIBLE else View.GONE
-            val verses = withContext(Dispatchers.IO) {
-                passages.flatMap { AppServices.bibleDb.versesForRanges(it.ranges) }
-            }
-            blocks = buildBlocks(verses)
-            binding.flow.doOnLayout { repaginate() }
+            loadCommentary(startId)
         }
     }
 
-    /** Opens commentary over the passage's whole (possibly multi-book) span. */
-    private fun openPassageCommentary() {
-        val ranges = passages.flatMap { it.ranges }
-        if (ranges.isEmpty()) return
-        CommentaryLauncher.open(this, ranges, binding.title.text.toString())
+    /** Resolves the commentary by id, gathers its entries, and lays them out. */
+    private suspend fun loadCommentary(id: String?) {
+        val chosen = AppServices.commentaries.firstOrNull { it.id == id }
+            ?: AppServices.commentaries.firstOrNull()
+            ?: run { finish(); return }
+        db = chosen
+
+        val entries = withContext(Dispatchers.IO) { gather(chosen) }
+        blocks = buildBlocks(entries)
+        page = 0
+
+        val abbr = chosen.metadata["abbreviation"] ?: getString(R.string.notes)
+        binding.title.text = getString(R.string.commentary_title, abbr, reference)
+        // doOnLayout runs now if already laid out (e.g. after a "Change"), else next pass.
+        binding.flow.doOnLayout { repaginate() }
     }
 
-    /** Opens commentary anchored to the verse under a long-press, if any. */
-    private fun openVerseCommentary(x: Float, y: Float) {
-        if (pages.isEmpty()) return
-        val items = pages[page]
-        val localX = (x - binding.flow.horizontalPad).toInt()
-        val localY = (y - binding.flow.verticalPad).toInt()
-        var top = 0
-        for (i in currentElements.indices) {
-            val element = currentElements[i]
-            top += element.topPad
-            val h = element.layout.height
-            if (localY in top..(top + h)) {
-                val item = items.getOrNull(i)
-                if (item is TextItem) {
-                    val line = element.layout.getLineForVertical(localY - top)
-                    val offset = element.layout.getOffsetForHorizontal(line, localX.toFloat())
-                    typo.verseKeyAtOffset(item.atoms, offset)?.let {
-                        CommentaryLauncher.openVerse(this, it)
-                    }
-                }
-                return
+    /** Entries over every range, in order, de-duplicated (a block spanning two
+     *  adjacent ranges appears once). Mirrors the Flutter launcher's gathering. */
+    private fun gather(source: CommentaryDatabase): List<CommentaryEntry> {
+        val seen = HashSet<Int>()
+        val out = ArrayList<CommentaryEntry>()
+        for (r in ranges) {
+            for (entry in source.entriesForRange(r.startKey, r.endKey)) {
+                if (seen.add(entry.id)) out.add(entry)
             }
-            top += h + element.bottomPad
         }
+        return out
     }
 
-    /** Groups verses into heading + text blocks, a new heading per book/chapter. */
-    private fun buildBlocks(verses: List<VerseHit>): List<PassageItem> {
+    /** A heading (the comment's own section title) then its prose as word atoms. */
+    private fun buildBlocks(entries: List<CommentaryEntry>): List<PassageItem> {
         val blocks = ArrayList<PassageItem>()
-        var currentKey: String? = null
-        var atoms = ArrayList<Atom>()
-        fun flush() {
-            if (atoms.isNotEmpty()) {
-                blocks.add(TextItem(atoms))
-                atoms = ArrayList()
-            }
-        }
-        for (v in verses) {
-            val key = "${v.usfm}.${v.chapter}"
-            if (key != currentKey) {
-                flush()
-                blocks.add(HeadingItem("${Canon.byUsfm(v.usfm).name} ${v.chapter}"))
-                currentKey = key
-            }
-            val ordinal = Canon.byUsfm(v.usfm).ordinal
-            atoms.add(NumberAtom(v.verse, VerseKey.encode(ordinal, v.chapter, v.verse)))
-            for (word in v.text.split(Regex("\\s+"))) {
+        for (entry in entries) {
+            entry.heading?.let { blocks.add(HeadingItem(it)) }
+            val atoms = ArrayList<Atom>()
+            for (word in entry.body.split(WHITESPACE)) {
                 if (word.isNotEmpty()) atoms.add(WordAtom(word))
             }
+            if (atoms.isNotEmpty()) blocks.add(TextItem(atoms))
         }
-        flush()
         return blocks
+    }
+
+    /** Re-opens the picker and, if a commentary is chosen, reloads with it. */
+    private fun changeCommentary() {
+        lifecycleScope.launch {
+            val chosen = CommentaryLauncher.pick(this@CommentaryActivity, AppServices.commentaries)
+                ?: return@launch
+            AppServices.commentaryPrefs.remember(chosen.id)
+            loadCommentary(chosen.id)
+        }
     }
 
     private fun repaginate() {
@@ -178,7 +167,7 @@ class PassageActivity : AppCompatActivity() {
     private fun renderCurrentPage() {
         if (pages.isEmpty()) return
         val width = binding.flow.readingWidth()
-        currentElements = pages[page].map { item ->
+        binding.flow.elements = pages[page].map { item ->
             when (item) {
                 is HeadingItem -> FlowElement(
                     typo.passageHeadingLayout(item.text, width),
@@ -188,7 +177,6 @@ class PassageActivity : AppCompatActivity() {
                 is TextItem -> FlowElement(typo.bodyLayout(item.atoms, width))
             }
         }
-        binding.flow.elements = currentElements
         binding.pageIndicator.text =
             if (pages.size > 1) getString(R.string.page_indicator, page + 1, pages.size) else ""
     }
@@ -225,10 +213,6 @@ class PassageActivity : AppCompatActivity() {
                 return true
             }
 
-            override fun onLongPress(e: MotionEvent) {
-                openVerseCommentary(e.x, e.y)
-            }
-
             override fun onFling(
                 e1: MotionEvent?,
                 e2: MotionEvent,
@@ -252,8 +236,36 @@ class PassageActivity : AppCompatActivity() {
         }
     }
 
+    private fun readRanges(flat: IntArray): List<VerseRange> =
+        (flat.indices step 2)
+            .filter { it + 1 < flat.size }
+            .map { VerseRange(flat[it], flat[it + 1]) }
+
     companion object {
         private const val FULL_REFRESH_EVERY = 6
-        const val EXTRA_QUERY = "query"
+        private val WHITESPACE = Regex("\\s+")
+        private const val EXTRA_COMMENTARY_ID = "commentary_id"
+        private const val EXTRA_REFERENCE = "reference"
+        private const val EXTRA_RANGES = "ranges"
+        private const val EXTRA_ALLOW_CHANGE = "allow_change"
+
+        fun intent(
+            context: Context,
+            commentaryId: String,
+            reference: String,
+            ranges: List<VerseRange>,
+            allowChange: Boolean,
+        ): Intent {
+            val flat = IntArray(ranges.size * 2)
+            ranges.forEachIndexed { i, r ->
+                flat[i * 2] = r.startKey
+                flat[i * 2 + 1] = r.endKey
+            }
+            return Intent(context, CommentaryActivity::class.java)
+                .putExtra(EXTRA_COMMENTARY_ID, commentaryId)
+                .putExtra(EXTRA_REFERENCE, reference)
+                .putExtra(EXTRA_RANGES, flat)
+                .putExtra(EXTRA_ALLOW_CHANGE, allowChange)
+        }
     }
 }

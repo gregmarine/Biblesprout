@@ -114,5 +114,6 @@ object AppServices {
         )
     }
 
-    private val BUNDLED_COMMENTARIES = listOf("mhcc.commentary")
+    // Concise first so it's the "sole" default order; both are bundled for now.
+    private val BUNDLED_COMMENTARIES = listOf("mhcc.commentary", "mhc.commentary")
 }

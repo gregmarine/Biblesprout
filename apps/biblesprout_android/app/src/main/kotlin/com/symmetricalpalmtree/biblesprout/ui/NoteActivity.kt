@@ -296,9 +296,21 @@ class NoteActivity : AppCompatActivity() {
         }
         val dialog = Dialog(this).apply {
             requestWindowFeature(Window.FEATURE_NO_TITLE)
-            setContentView(panel, ViewGroup.LayoutParams(dp(300), ViewGroup.LayoutParams.WRAP_CONTENT))
-            window?.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
-            window?.setDimAmount(0f) // no scrim on e-ink
+            setContentView(
+                panel,
+                ViewGroup.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT,
+                ),
+            )
+            window?.apply {
+                setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
+                setDimAmount(0f) // no scrim on e-ink
+                // Size the window itself and centre it — otherwise a fixed-width panel
+                // sits left-aligned inside a match-parent window.
+                setLayout(dp(300), ViewGroup.LayoutParams.WRAP_CONTENT)
+                setGravity(Gravity.CENTER)
+            }
         }
         panel.addView(
             TextView(this).apply {

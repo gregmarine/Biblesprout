@@ -119,7 +119,10 @@ reader, passage span from the passage view), keyed by `start_key`/`end_key` like
 are full-screen (minus the top toolbar and bottom pagination); the user flips through them — prev/
 next buttons or a finger swipe — and a **swipe-left on the last page inserts a new page**. A simple
 pen and a **whole-stroke eraser** are the tools; there is no explicit save (each stroke persists on
-pen-lift).
+pen-lift). Two page controls sit in the top bar: **Clear** wipes the current page's ink but keeps
+the page (acts immediately), and **Delete** removes the page behind a scrimless bordered confirm
+(the last remaining page can only be cleared). `pageIndex` is a sort key, not a position — deletes
+leave gaps and a new page takes `max+1`, so ordering stays correct without renumbering.
 
 - `notes/NoteCanvasView` — the drawing surface: a plain `View` driving `TouchHelper` raw drawing.
   Completed strokes arrive in `onRawDrawingTouchPointListReceived`; the SDK's overlay paints live

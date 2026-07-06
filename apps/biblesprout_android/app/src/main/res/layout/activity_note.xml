@@ -43,6 +43,22 @@
             android:textStyle="bold" />
 
         <ImageView
+            android:id="@+id/clearPage"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:padding="10dp"
+            android:contentDescription="@string/clear_page"
+            android:src="@drawable/ic_page_clear" />
+
+        <ImageView
+            android:id="@+id/deletePage"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:padding="10dp"
+            android:contentDescription="@string/delete_page"
+            android:src="@drawable/ic_page_delete" />
+
+        <ImageView
             android:id="@+id/pen"
             android:layout_width="48dp"
             android:layout_height="48dp"

@@ -95,4 +95,12 @@ interface NoteDao {
 
     @Query("DELETE FROM note_stroke WHERE id IN (:ids)")
     suspend fun deleteStrokes(ids: List<Long>)
+
+    /** Clears a page's ink (keeps the page). */
+    @Query("DELETE FROM note_stroke WHERE page_id = :pageId")
+    suspend fun clearPage(pageId: Long)
+
+    /** Removes a page row; call [clearPage] first to drop its strokes. */
+    @Query("DELETE FROM note_page WHERE id = :pageId")
+    suspend fun deletePage(pageId: Long)
 }

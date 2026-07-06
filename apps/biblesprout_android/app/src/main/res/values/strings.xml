@@ -49,6 +49,11 @@
     <string name="note_title">%1$s · Notes</string>
     <string name="pen">Pen</string>
     <string name="eraser">Eraser</string>
+    <string name="clear_page">Clear page</string>
+    <string name="delete_page">Delete page</string>
+    <string name="delete_page_message">Delete this page and its notes?</string>
+    <string name="delete">Delete</string>
+    <string name="cancel">Cancel</string>
 
     <!-- Highlights -->
     <string name="highlight">Highlight</string>

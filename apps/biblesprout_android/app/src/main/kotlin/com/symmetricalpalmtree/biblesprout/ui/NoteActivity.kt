@@ -1,12 +1,22 @@
 package com.symmetricalpalmtree.biblesprout.ui
 
 import android.annotation.SuppressLint
+import android.app.Dialog
 import android.content.Context
 import android.content.Intent
+import android.graphics.Color
+import android.graphics.Typeface
+import android.graphics.drawable.ColorDrawable
+import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
 import android.view.GestureDetector
+import android.view.Gravity
 import android.view.MotionEvent
+import android.view.ViewGroup
+import android.view.Window
 import android.widget.ImageView
+import android.widget.LinearLayout
+import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import androidx.core.view.WindowCompat
@@ -63,6 +73,8 @@ class NoteActivity : AppCompatActivity() {
         binding.back.setOnClickListener { finish() }
         binding.pen.setOnClickListener { selectTool(NoteCanvasView.Tool.PEN) }
         binding.eraser.setOnClickListener { selectTool(NoteCanvasView.Tool.ERASER) }
+        binding.clearPage.setOnClickListener { clearCurrentPage() }
+        binding.deletePage.setOnClickListener { deleteCurrentPage() }
         binding.prev.setOnClickListener { goToPage(currentIndex - 1) }
         binding.next.setOnClickListener { nextPageOrAdd() }
         selectTool(NoteCanvasView.Tool.PEN)
@@ -106,9 +118,11 @@ class NoteActivity : AppCompatActivity() {
             binding.canvas.setStrokes(strokes)
             binding.pageIndicator.text =
                 getString(R.string.page_indicator, currentIndex + 1, pages.size)
-            setArrow(binding.prev, currentIndex > 0)
+            setIconEnabled(binding.prev, currentIndex > 0)
             // The next arrow is always live: on the last page it adds a new page.
-            setArrow(binding.next, true)
+            setIconEnabled(binding.next, true)
+            // Delete needs a page to fall back to; the last remaining page is cleared, not deleted.
+            setIconEnabled(binding.deletePage, pages.size > 1)
         }
     }
 
@@ -129,14 +143,48 @@ class NoteActivity : AppCompatActivity() {
 
     private fun addPage() {
         lifecycleScope.launch {
-            val newIndex = pages.size
+            // pageIndex is a sort key, not a list position — after a mid-notebook delete
+            // it has gaps, so a new page takes one past the current max (never a duplicate).
+            val nextIndex = (pages.maxOfOrNull { it.pageIndex } ?: -1) + 1
             val pageId = withContext(Dispatchers.IO) {
                 AppServices.index.notes()
-                    .insertPage(NotePage(notebookId = notebookId, pageIndex = newIndex))
+                    .insertPage(NotePage(notebookId = notebookId, pageIndex = nextIndex))
             }
-            pages.add(NotePage(id = pageId, notebookId = notebookId, pageIndex = newIndex))
-            currentIndex = newIndex
+            pages.add(NotePage(id = pageId, notebookId = notebookId, pageIndex = nextIndex))
+            currentIndex = pages.size - 1
             showPage()
+        }
+    }
+
+    /** Clears the current page's ink but keeps the page (acts immediately). */
+    private fun clearCurrentPage() {
+        val page = pages.getOrNull(currentIndex) ?: return
+        lifecycleScope.launch {
+            withContext(Dispatchers.IO) {
+                val dao = AppServices.index.notes()
+                dao.clearPage(page.id)
+                dao.touchNotebook(notebookId, System.currentTimeMillis())
+            }
+            binding.canvas.setStrokes(emptyList())
+        }
+    }
+
+    /** Deletes the current page (confirmed). The last remaining page can only be cleared. */
+    private fun deleteCurrentPage() {
+        if (!ready || pages.size <= 1) return
+        showDeleteConfirm {
+            val page = pages[currentIndex]
+            lifecycleScope.launch {
+                withContext(Dispatchers.IO) {
+                    val dao = AppServices.index.notes()
+                    dao.clearPage(page.id)
+                    dao.deletePage(page.id)
+                    dao.touchNotebook(notebookId, System.currentTimeMillis())
+                }
+                pages.removeAt(currentIndex)
+                if (currentIndex >= pages.size) currentIndex = pages.size - 1
+                showPage()
+            }
         }
     }
 
@@ -222,11 +270,74 @@ class NoteActivity : AppCompatActivity() {
         }
     }
 
-    private fun setArrow(view: ImageView, enabled: Boolean) {
+    private fun setIconEnabled(view: ImageView, enabled: Boolean) {
         view.isEnabled = enabled
         view.setColorFilter(
             ContextCompat.getColor(this, if (enabled) R.color.eink_black else R.color.eink_disabled),
         )
+    }
+
+    /**
+     * A scrimless, hard-bordered confirm for the destructive page delete — same e-ink
+     * dialog treatment as the commentary picker (a 2px border stands in for the banned
+     * dim/scrim). Clear is not confirmed; only delete routes through here.
+     */
+    private fun showDeleteConfirm(onConfirm: () -> Unit) {
+        val black = ContextCompat.getColor(this, R.color.eink_black)
+        val white = ContextCompat.getColor(this, R.color.eink_white)
+
+        val panel = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            background = GradientDrawable().apply {
+                setColor(white)
+                setStroke(dp(2), black)
+                cornerRadius = dp(4).toFloat()
+            }
+        }
+        val dialog = Dialog(this).apply {
+            requestWindowFeature(Window.FEATURE_NO_TITLE)
+            setContentView(panel, ViewGroup.LayoutParams(dp(300), ViewGroup.LayoutParams.WRAP_CONTENT))
+            window?.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
+            window?.setDimAmount(0f) // no scrim on e-ink
+        }
+        panel.addView(
+            TextView(this).apply {
+                text = getString(R.string.delete_page_message)
+                textSize = 18f
+                setTextColor(black)
+                setPadding(dp(20), dp(20), dp(20), dp(16))
+            },
+        )
+        panel.addView(
+            LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.END
+                setPadding(dp(8), 0, dp(8), dp(10))
+                addView(
+                    TextView(this@NoteActivity).apply {
+                        text = getString(R.string.cancel)
+                        textSize = 16f
+                        setTextColor(black)
+                        setPadding(dp(16), dp(12), dp(16), dp(12))
+                        setOnClickListener { dialog.dismiss() }
+                    },
+                )
+                addView(
+                    TextView(this@NoteActivity).apply {
+                        text = getString(R.string.delete)
+                        textSize = 16f
+                        setTypeface(typeface, Typeface.BOLD)
+                        setTextColor(black)
+                        setPadding(dp(16), dp(12), dp(16), dp(12))
+                        setOnClickListener {
+                            dialog.dismiss()
+                            onConfirm()
+                        }
+                    },
+                )
+            },
+        )
+        dialog.show()
     }
 
     private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()

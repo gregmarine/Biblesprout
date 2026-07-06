@@ -38,6 +38,14 @@
                 android:textSize="18sp"
                 android:textStyle="bold" />
 
+            <ImageView
+                android:id="@+id/bookmark"
+                android:layout_width="44dp"
+                android:layout_height="44dp"
+                android:padding="10dp"
+                android:contentDescription="@string/add_bookmark"
+                android:src="@drawable/ic_bookmark" />
+
             <TextView
                 android:id="@+id/notes"
                 android:layout_width="wrap_content"

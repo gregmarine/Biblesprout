@@ -1,6 +1,7 @@
 package com.symmetricalpalmtree.biblesprout.data.index
 
 import androidx.room.Dao
+import androidx.room.Delete
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
@@ -34,4 +35,24 @@ interface ProgressDao {
     /** The most recently read position across all sources ("continue reading"). */
     @Query("SELECT * FROM reading_progress ORDER BY updated_at DESC LIMIT 1")
     suspend fun latest(): ReadingProgress?
+}
+
+@Dao
+interface BookmarkDao {
+    /** All bookmarks in canonical reading order (verse keys sort that way). */
+    @Query("SELECT * FROM bookmark ORDER BY verse_key")
+    suspend fun all(): List<Bookmark>
+
+    /** Just the bookmarked verse keys, for the reader's toggle state. */
+    @Query("SELECT verse_key FROM bookmark")
+    suspend fun keys(): List<Int>
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun add(bookmark: Bookmark)
+
+    @Query("DELETE FROM bookmark WHERE verse_key = :verseKey")
+    suspend fun removeByKey(verseKey: Int)
+
+    @Delete
+    suspend fun remove(bookmark: Bookmark)
 }

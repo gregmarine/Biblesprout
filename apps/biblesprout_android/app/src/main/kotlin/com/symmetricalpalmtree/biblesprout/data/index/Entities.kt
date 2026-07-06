@@ -11,7 +11,7 @@ import androidx.room.PrimaryKey
  * User data addresses scripture by the same canonical verse keys the source
  * databases use. Ported from the Flutter `app_database.dart` schema.
  *
- * The annotation tables (bookmark/highlight/note/cross_link) from the Flutter
+ * The remaining annotation tables (highlight/note/cross_link) from the Flutter
  * schema are intentionally not created yet — they'll be added with the feature
  * that writes them, so their columns can be settled then.
  */
@@ -49,4 +49,18 @@ data class ReadingProgress(
     val chapter: Int,
     val page: Int,
     @ColumnInfo(name = "updated_at") val updatedAt: Long,
+)
+
+/**
+ * A saved place, anchored to a single canonical [verseKey] (the top verse of the
+ * page it was made on). The reader reopens on the page containing that verse. The
+ * unique index makes toggling a verse's bookmark idempotent. The reference label
+ * and snippet shown in the list are derived from the key against the open Bible,
+ * so nothing translation-specific is stored here.
+ */
+@Entity(tableName = "bookmark", indices = [Index("verse_key", unique = true)])
+data class Bookmark(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    @ColumnInfo(name = "verse_key") val verseKey: Int,
+    @ColumnInfo(name = "created_at") val createdAt: Long,
 )

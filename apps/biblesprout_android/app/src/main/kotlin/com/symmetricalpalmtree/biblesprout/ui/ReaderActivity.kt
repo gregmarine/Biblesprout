@@ -16,6 +16,7 @@ import com.symmetricalpalmtree.biblesprout.R
 import com.symmetricalpalmtree.biblesprout.data.AppServices
 import com.symmetricalpalmtree.biblesprout.data.VerseKey
 import com.symmetricalpalmtree.biblesprout.data.VerseRange
+import com.symmetricalpalmtree.biblesprout.data.index.Bookmark
 import com.symmetricalpalmtree.biblesprout.data.index.ReadingPosition
 import com.symmetricalpalmtree.biblesprout.databinding.ActivityReaderBinding
 import com.symmetricalpalmtree.biblesprout.model.ChapterRef
@@ -59,6 +60,11 @@ class ReaderActivity : AppCompatActivity() {
     private var currentBody: StaticLayout? = null
     private var bodyTopPx = 0
 
+    // The anchor (top) verse key of each page, and the set of bookmarked keys, for
+    // the top-bar bookmark toggle.
+    private var pageAnchors: List<Int> = emptyList()
+    private var bookmarkedKeys: Set<Int> = emptySet()
+
     private val safetyPad by lazy { typo.dp(8f) }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -84,6 +90,7 @@ class ReaderActivity : AppCompatActivity() {
         binding.title.setOnClickListener { openContents() }
         binding.contents.setOnClickListener { openContents() }
         binding.notes.setOnClickListener { openChapterCommentary() }
+        binding.bookmark.setOnClickListener { toggleBookmark() }
         attachGestures()
 
         lifecycleScope.launch {
@@ -91,9 +98,54 @@ class ReaderActivity : AppCompatActivity() {
             // Offer the Notes affordance only when a commentary is installed.
             binding.notes.visibility =
                 if (AppServices.commentaries.isNotEmpty()) View.VISIBLE else View.GONE
+            bookmarkedKeys = withContext(Dispatchers.IO) {
+                AppServices.index.bookmarks().keys()
+            }.toSet()
             persist() // record the opened location immediately
             binding.reader.doOnLayout { repaginate() }
         }
+    }
+
+    // --- Bookmarks ------------------------------------------------------------
+
+    /** Toggles a bookmark on the current page's anchor (top) verse. */
+    private fun toggleBookmark() {
+        val key = pageAnchors.getOrNull(page) ?: return
+        lifecycleScope.launch {
+            val dao = AppServices.index.bookmarks()
+            bookmarkedKeys = if (key in bookmarkedKeys) {
+                withContext(Dispatchers.IO) { dao.removeByKey(key) }
+                bookmarkedKeys - key
+            } else {
+                withContext(Dispatchers.IO) {
+                    dao.add(Bookmark(verseKey = key, createdAt = System.currentTimeMillis()))
+                }
+                bookmarkedKeys + key
+            }
+            updateBookmarkIcon()
+        }
+    }
+
+    private fun updateBookmarkIcon() {
+        val marked = pageAnchors.getOrNull(page)?.let { it in bookmarkedKeys } ?: false
+        binding.bookmark.setImageResource(
+            if (marked) R.drawable.ic_bookmark_filled else R.drawable.ic_bookmark,
+        )
+        binding.bookmark.contentDescription =
+            getString(if (marked) R.string.remove_bookmark else R.string.add_bookmark)
+    }
+
+    /** The anchor (top) verse of each page: its first verse number, or — when a
+     *  page opens mid-verse — the verse carried over from the previous page. */
+    private fun computeAnchors(pages: List<List<Atom>>, ordinal: Int, chapter: Int): List<Int> {
+        var lastKey = VerseKey.encode(ordinal, chapter, 1)
+        val anchors = ArrayList<Int>(pages.size)
+        for (atoms in pages) {
+            val first = atoms.firstOrNull()
+            anchors.add(if (first is NumberAtom) first.verseKey else lastKey)
+            (atoms.lastOrNull { it is NumberAtom } as? NumberAtom)?.let { lastKey = it.verseKey }
+        }
+        return anchors
     }
 
     /** Opens commentary for the whole chapter in view. */
@@ -200,6 +252,7 @@ class ReaderActivity : AppCompatActivity() {
                 )
             }
             pages = packed
+            pageAnchors = computeAnchors(packed, ref.bookIndex + 1, ref.chapterNumber)
             if (pendingLastPage) {
                 page = pages.size - 1
                 pendingLastPage = false
@@ -234,6 +287,7 @@ class ReaderActivity : AppCompatActivity() {
         currentBody = body
         binding.title.text = getString(R.string.reader_title, book.name, chapter.number)
         binding.pageIndicator.text = getString(R.string.page_indicator, page + 1, pages.size)
+        updateBookmarkIcon()
     }
 
     // --- Gestures -------------------------------------------------------------

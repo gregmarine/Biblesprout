@@ -37,4 +37,10 @@
     <string name="commentary">Commentary</string>
     <!-- %1$s = commentary abbreviation, %2$s = reference (e.g. "MHCC · John 3") -->
     <string name="commentary_title">%1$s · %2$s</string>
+
+    <!-- Bookmarks -->
+    <string name="bookmarks">Bookmarks</string>
+    <string name="add_bookmark">Bookmark this place</string>
+    <string name="remove_bookmark">Remove bookmark</string>
+    <string name="no_bookmarks">No bookmarks yet.\nTap the ribbon in the reader to save your place.</string>
 </resources>

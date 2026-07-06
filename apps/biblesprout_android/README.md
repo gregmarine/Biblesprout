@@ -5,23 +5,26 @@ Native Android port of Biblesprout. Replaces the Flutter implementation kept (fr
 
 ## Status
 
-**Reader + Find + Commentary working end-to-end on the BOOX Go 6.** Library → chapters grid →
-paginated reader, Find → passage/search, and commentary (chapter, passage, and verse-anchored)
-all run and verified on-device. The library (`MainActivity`, `ui/SwipePager`, `data/AppServices`)
-paginates the 66 books OT/NT with a "Continue reading" banner from the index;
+**Reader + Find + Commentary + Bookmarks working end-to-end on the BOOX Go 6.** Library → chapters
+grid → paginated reader, Find → passage/search, commentary (chapter, passage, and verse-anchored),
+and bookmarks all run and verified on-device. The library (`MainActivity`, `ui/SwipePager`,
+`data/AppServices`) paginates the 66 books OT/NT with a "Continue reading" banner from the index;
 `ui/ChaptersActivity` is the paginated chapter-number grid; `ui/ReaderActivity` + the `reader/`
 package are the paginated reader — superscript verse numbers, a book/chapter heading on each
 chapter's first page, tap-thirds / swipe page turns that flow across chapter and book boundaries,
-position persistence, and a black full-refresh flash every 6 turns. Next: the downloadable-sources
-model (to bring in the six-volume Complete commentary), then annotations.
+position persistence, and a black full-refresh flash every 6 turns. Both Matthew Henry commentaries
+(Concise + the six-volume Complete) are bundled in the APK — sideload-only for now, so the
+downloadable-sources model is deferred. Next: more annotations (highlights, notes).
 
 ### Commentary — `ui/CommentaryActivity`, `reader/CommentaryLauncher`, `data/CommentaryDatabase`
 
-Matthew Henry's Concise (`mhcc`, ~6 MB) ships in the APK; the six-volume Complete (`mhc`, ~50 MB)
-waits for the download model. A "Notes" affordance in the reader and passage top bars opens
-commentary for the chapter / passage in view, and a **long-press** on any verse opens commentary
-for just that verse (the superscript number is too small a tap target on e-ink, and tap/swipe are
-already page turns).
+Both Matthew Henry commentaries ship in the APK — the Concise (`mhcc`, ~6 MB) and the six-volume
+Complete (`mhc`, ~50 MB); while the app is sideload-only the large DB is fine bundled. A "Notes"
+affordance in the reader and passage top bars opens commentary for the chapter / passage in view,
+and a **long-press** on any verse opens commentary for just that verse (the superscript number is
+too small a tap target on e-ink, and tap/swipe are already page turns). With both installed, the
+launcher shows a scrimless bordered picker on first use and remembers the choice; the commentary
+screen offers "Change".
 
 - `data/CommentaryDatabase` addresses comments by the same canonical verse keys as the Bible, so
   `entriesForRange()` answers "what covers this span" with an overlap test. `AppServices` installs
@@ -74,16 +77,32 @@ grows its line), and sizes are in **sp** so the BOOX's 0.85 font scale is honour
 - Pagination runs off the main thread (`Dispatchers.Default`); a long-press opens verse-anchored
   commentary (see the Commentary section).
 
+### Bookmarks — `ui/BookmarksActivity`, `data/index` `Bookmark`
+
+Verse-level bookmarks, the first annotation feature. A ribbon toggle in the reader top bar
+bookmarks the current page's **anchor (top) verse** — its first verse number, or the verse carried
+over when a page opens mid-verse (`ReaderActivity.computeAnchors`). The ribbon shows filled vs.
+outline for the current page's state. A ribbon icon in the library header opens
+`ui/BookmarksActivity`: a paginated list (reference + verse snippet, derived from the key against
+the open Bible so nothing translation-specific is stored) in canonical order; tapping a row opens
+the reader on that verse's page (reusing `EXTRA_START_VERSE`), and a trailing ✕ removes it.
+
+- `Bookmark` entity (`bookmark` table, unique index on `verse_key` so toggling is idempotent) +
+  `BookmarkDao`. Adding it bumped `AppIndexDatabase` to **v2** with a hand-written `MIGRATION_1_2`
+  that creates the table (its CREATE must match Room's generated schema exactly) — the reading
+  position and settings survive the upgrade rather than being wiped.
+
 ### Global index — `data/index/` (Room)
 
 The read-write `biblesprout.db` via **Room over the framework SQLite** (plaintext; the index
 needs no FTS5 and holds no sensitive data — the read-only content DBs use SQLCipher instead).
 
-- Entities `AppSetting`, `Source`, `ReadingProgress`; DAOs for each; `AppIndexDatabase`.
+- Entities `AppSetting`, `Source`, `ReadingProgress`, `Bookmark`; DAOs for each; `AppIndexDatabase`
+  (schema v2, with a migration that adds the bookmark table).
 - `ReadingPositionStore` — translates the reader's 0-based `bookIndex` ↔ canonical USFM.
-- Wired through `AppServices` (opens the index, registers the BSB source, exposes
+- Wired through `AppServices` (opens the index, registers the BSB + commentary sources, exposes
   `readingPosition`). Verified: a saved position survives process death and lights the banner.
-- Annotation tables (bookmark/highlight/note/cross_link) are deferred until the feature that
+- The remaining annotation tables (highlight/note/cross_link) are deferred until the feature that
   writes them, so their columns settle then.
 
 ### `data/` package
@@ -93,8 +112,8 @@ needs no FTS5 and holds no sensitive data — the read-only content DBs use SQLC
 - `BibleDatabase` — opens a `.bible` plaintext; `loadBible()`, `search()` (FTS5),
   `versesInRange()`, `versesForRanges()`. Returns `VerseHit`s.
 - `CommentaryDatabase` — opens a `.commentary` plaintext; `entriesForVerse()`,
-  `entriesForRange()`, `search()`. Returns `CommentaryEntry`s. Exercised on-device via the
-  bundled Concise commentary (see the Commentary section).
+  `entriesForRange()`, `search()`. Returns `CommentaryEntry`s. Exercised on-device via the two
+  bundled Matthew Henry commentaries (see the Commentary section).
 - `ContentInstaller` — copies bundled asset DBs into writable storage (the seam the future
   downloadable-sources model plugs into).
 - Content DBs use **raw SQLCipher, not Room**: Room validates its schema against the file and

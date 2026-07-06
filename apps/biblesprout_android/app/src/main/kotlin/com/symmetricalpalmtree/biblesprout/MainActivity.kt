@@ -16,6 +16,7 @@ import com.symmetricalpalmtree.biblesprout.data.index.ReadingPosition
 import com.symmetricalpalmtree.biblesprout.databinding.ActivityMainBinding
 import com.symmetricalpalmtree.biblesprout.model.Bible
 import com.symmetricalpalmtree.biblesprout.model.Book
+import com.symmetricalpalmtree.biblesprout.ui.BookmarksActivity
 import com.symmetricalpalmtree.biblesprout.ui.ChaptersActivity
 import com.symmetricalpalmtree.biblesprout.ui.FindActivity
 import com.symmetricalpalmtree.biblesprout.ui.ReaderActivity
@@ -53,6 +54,9 @@ class MainActivity : AppCompatActivity() {
         binding.next.setOnClickListener { showPage(current + 1) }
         binding.search.setOnClickListener {
             startActivity(Intent(this, FindActivity::class.java))
+        }
+        binding.bookmarks.setOnClickListener {
+            startActivity(Intent(this, BookmarksActivity::class.java))
         }
         binding.continueBanner.setOnClickListener {
             continuePosition?.let { startReader(it.bookIndex, it.chapterNumber, it.page) }

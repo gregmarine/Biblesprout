@@ -83,11 +83,16 @@ class ReaderView @JvmOverloads constructor(context: Context, attrs: AttributeSet
             val start = range.first
             val endExclusive = range.last + 1
             if (endExclusive <= start) continue
-            var line = body.getLineForOffset(start)
+            val firstLine = body.getLineForOffset(start)
             val lastLine = body.getLineForOffset(endExclusive - 1)
-            while (line <= lastLine) {
+            for (line in firstLine..lastLine) {
                 val segStart = maxOf(start, body.getLineStart(line))
-                val segEnd = minOf(endExclusive, body.getLineEnd(line))
+                // Clamp the run's end on this line to the last *visible* glyph: when
+                // the run continues onto the next line, its end sits at the line-break
+                // offset, whose x is measured on the next line (≈ the left margin), so
+                // reading it directly would draw the underline backwards. getLineVisibleEnd
+                // gives the end of the drawn text instead.
+                val segEnd = minOf(endExclusive, body.getLineVisibleEnd(line))
                 if (segEnd > segStart) {
                     val x1 = body.getPrimaryHorizontal(segStart)
                     val x2 = body.getPrimaryHorizontal(segEnd)
@@ -97,7 +102,6 @@ class ReaderView @JvmOverloads constructor(context: Context, attrs: AttributeSet
                         underlinePaint,
                     )
                 }
-                line++
             }
         }
     }

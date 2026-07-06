@@ -103,6 +103,7 @@ class ReaderActivity : AppCompatActivity() {
         binding.title.setOnClickListener { openContents() }
         binding.contents.setOnClickListener { openContents() }
         binding.notes.setOnClickListener { openChapterCommentary() }
+        binding.notebook.setOnClickListener { openChapterNotebook() }
         binding.bookmark.setOnClickListener { toggleBookmark() }
         binding.highlight.setOnClickListener { toggleHighlightMode() }
         binding.highlightAction.setOnClickListener { commitHighlightAction() }
@@ -330,6 +331,14 @@ class ReaderActivity : AppCompatActivity() {
             listOf(VerseRange(lo, hi)),
             "${book.name} ${ref.chapterNumber}",
         )
+    }
+
+    /** Opens the handwritten notebook for the whole chapter in view. */
+    private fun openChapterNotebook() {
+        val ordinal = ref.bookIndex + 1
+        val (lo, hi) = VerseKey.chapterBounds(ordinal, ref.chapterNumber)
+        val book = AppServices.bible.bookAt(ref.bookIndex)
+        startActivity(NoteActivity.intent(this, lo, hi, "${book.name} ${ref.chapterNumber}"))
     }
 
     /** Opens commentary anchored to the verse under a long-press, if any. */

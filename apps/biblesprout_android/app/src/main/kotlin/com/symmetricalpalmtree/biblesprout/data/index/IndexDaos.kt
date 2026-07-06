@@ -69,3 +69,30 @@ interface HighlightDao {
     @Query("DELETE FROM highlight WHERE id = :id")
     suspend fun removeById(id: Long)
 }
+
+@Dao
+interface NoteDao {
+    @Query("SELECT * FROM note_notebook WHERE start_key = :startKey AND end_key = :endKey LIMIT 1")
+    suspend fun findNotebook(startKey: Int, endKey: Int): NoteNotebook?
+
+    @Insert
+    suspend fun insertNotebook(notebook: NoteNotebook): Long
+
+    @Query("UPDATE note_notebook SET updated_at = :time WHERE id = :id")
+    suspend fun touchNotebook(id: Long, time: Long)
+
+    @Query("SELECT * FROM note_page WHERE notebook_id = :notebookId ORDER BY page_index")
+    suspend fun pages(notebookId: Long): List<NotePage>
+
+    @Insert
+    suspend fun insertPage(page: NotePage): Long
+
+    @Query("SELECT * FROM note_stroke WHERE page_id = :pageId ORDER BY id")
+    suspend fun strokes(pageId: Long): List<NoteStroke>
+
+    @Insert
+    suspend fun insertStroke(stroke: NoteStroke): Long
+
+    @Query("DELETE FROM note_stroke WHERE id IN (:ids)")
+    suspend fun deleteStrokes(ids: List<Long>)
+}

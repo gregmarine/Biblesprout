@@ -5,7 +5,7 @@ Native Android port of Biblesprout. Replaces the Flutter implementation kept (fr
 
 ## Status
 
-**Reader + Find + Commentary + Bookmarks + Highlights working end-to-end on the BOOX Go 6.**
+**Reader + Find + Commentary + Bookmarks + Highlights + handwritten Notes working end-to-end on the BOOX Go 6.**
 Library → chapters grid → paginated reader, Find → passage/search, commentary (chapter, passage,
 and verse-anchored), bookmarks, and highlights all run and verified on-device. The library
 (`MainActivity`, `ui/SwipePager`, `data/AppServices`) paginates the 66 books OT/NT with a "Continue
@@ -14,7 +14,8 @@ reading" banner from the index; `ui/ChaptersActivity` is the paginated chapter-n
 book/chapter heading on each chapter's first page, tap-thirds / swipe page turns that flow across
 chapter and book boundaries, position persistence, and a black full-refresh flash every 6 turns.
 Both Matthew Henry commentaries (Concise + the six-volume Complete) are bundled in the APK —
-sideload-only for now, so the downloadable-sources model is deferred. Next: notes.
+sideload-only for now, so the downloadable-sources model is deferred. Handwritten notes are the
+first BOOX Onyx-SDK feature (live pen + eraser).
 
 ### Commentary — `ui/CommentaryActivity`, `reader/CommentaryLauncher`, `data/CommentaryDatabase`
 
@@ -110,18 +111,47 @@ chapter on open) and survive repagination.
   `spannable` lays down, seeded per page by `ReaderActivity.computeSeeds` so a verse split across
   pages keeps counting its words.
 
+### Notes — `ui/NoteActivity`, `notes/` package, `data/index` note tables
+
+Handwritten notes — the first feature on the **Onyx BOOX pen pipeline**. A notebook icon in the
+reader and passage top bars opens a notebook anchored to that scripture span (chapter from the
+reader, passage span from the passage view), keyed by `start_key`/`end_key` like commentary. Pages
+are full-screen (minus the top toolbar and bottom pagination); the user flips through them — prev/
+next buttons or a finger swipe — and a **swipe-left on the last page inserts a new page**. A simple
+pen and a **whole-stroke eraser** are the tools; there is no explicit save (each stroke persists on
+pen-lift).
+
+- `notes/NoteCanvasView` — the drawing surface: a plain `View` driving `TouchHelper` raw drawing.
+  Completed strokes arrive in `onRawDrawingTouchPointListReceived`; the SDK's overlay paints live
+  ink. Onyx integration details that matter (distilled from `../notesprout_android` and our
+  `BOOXDemo`): forward `onTouchEvent` to the `TouchHelper`; the limit rect is the **full view**
+  with the toolbar/pagination bands carved out as *exclude* rects (a shrunk limit rect drops the
+  real-time fast-path); and the page-turn/erase panel handoff toggles only the **render** flag
+  (not the whole pipeline) then `handwritingRepaint`s and lets `setRawDrawingEnabled(true)` restore
+  render — tearing the pipeline down cold-restarts the pen's render surface. (A device-level quirk
+  makes the *first* stroke after each arm lag until the surface warms; it's present in Notesprout
+  too, i.e. not our code.) The pen pipeline is a process-global resource guarded by `penOwner`.
+- `notes/StrokeCodec` / `InkStroke` — strokes are stored as a packed little-endian `float` BLOB of
+  raw canvas `x,y` pairs (`NoteStroke.points`), loaded and drawn whole per page; whole-stroke erase
+  just deletes the row. Chosen over Notesprout's JSON for fast per-page query/draw.
+- `NoteNotebook` / `NotePage` / `NoteStroke` entities + `NoteDao` (find-or-create notebook, pages,
+  per-page strokes, insert/delete). `AppIndexDatabase` is at **v4** (`MIGRATION_3_4` adds the three
+  tables). New deps: `com.onyx.android.sdk:onyxsdk-pen` + `onyxsdk-device`, and `hiddenapibypass`
+  (the SDK reflects into hidden APIs — `BiblesproutApplication` calls `addHiddenApiExemptions("")`).
+
 ### Global index — `data/index/` (Room)
 
 The read-write `biblesprout.db` via **Room over the framework SQLite** (plaintext; the index
 needs no FTS5 and holds no sensitive data — the read-only content DBs use SQLCipher instead).
 
-- Entities `AppSetting`, `Source`, `ReadingProgress`, `Bookmark`, `Highlight`; DAOs for each;
-  `AppIndexDatabase` (schema **v3**, with per-feature migrations that each add one annotation table).
+- Entities `AppSetting`, `Source`, `ReadingProgress`, `Bookmark`, `Highlight`, `NoteNotebook`,
+  `NotePage`, `NoteStroke`; DAOs for each; `AppIndexDatabase` (schema **v4**, with per-feature
+  migrations that each add its annotation table(s)).
 - `ReadingPositionStore` — translates the reader's 0-based `bookIndex` ↔ canonical USFM.
 - Wired through `AppServices` (opens the index, registers the BSB + commentary sources, exposes
   `readingPosition`). Verified: a saved position survives process death and lights the banner.
-- The remaining annotation tables (note/cross_link) are deferred until the feature that writes
-  them, so their columns settle then.
+- The remaining annotation table (cross_link) is deferred until the feature that writes it, so
+  its columns settle then.
 
 ### `data/` package
 
@@ -147,7 +177,8 @@ needs no FTS5 and holds no sensitive data — the read-only content DBs use SQLC
   which the reader's search needs and the BOOX system library can't be assumed to provide.
   `BiblesproutApplication` loads the `sqlcipher` native lib at startup.
 - `applicationId` `com.symmetricalpalmtree.biblesprout` (replaces the Flutter app); debug adds
-  `.dev`. The Onyx SDK is not yet a dependency — add `onyxsdk-device` for e-ink refresh control.
+  `.dev`. The **Onyx BOOX SDK** is now a dependency (`onyxsdk-pen` + `onyxsdk-device`, plus
+  `hiddenapibypass`), wired for handwritten notes (see the Notes section).
 
 ## Content
 

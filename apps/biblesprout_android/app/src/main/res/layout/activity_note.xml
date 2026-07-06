@@ -1,0 +1,110 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/eink_white">
+
+    <!-- Full-screen handwriting surface; the toolbar/pagination bands are carved
+         out of the pen capture area via the canvas limit rect. -->
+    <com.symmetricalpalmtree.biblesprout.notes.NoteCanvasView
+        android:id="@+id/canvas"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent" />
+
+    <!-- Top toolbar: back, title, pen, eraser -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="56dp"
+        android:layout_gravity="top"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:background="@color/eink_white"
+        android:paddingStart="8dp"
+        android:paddingEnd="8dp">
+
+        <ImageView
+            android:id="@+id/back"
+            android:layout_width="44dp"
+            android:layout_height="44dp"
+            android:padding="10dp"
+            android:contentDescription="@string/back"
+            android:src="@drawable/ic_arrow_back" />
+
+        <TextView
+            android:id="@+id/title"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:layout_marginStart="6dp"
+            android:ellipsize="end"
+            android:maxLines="1"
+            android:textColor="@color/eink_black"
+            android:textSize="18sp"
+            android:textStyle="bold" />
+
+        <ImageView
+            android:id="@+id/pen"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:padding="10dp"
+            android:contentDescription="@string/pen"
+            android:src="@drawable/ic_pen" />
+
+        <ImageView
+            android:id="@+id/eraser"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:padding="10dp"
+            android:contentDescription="@string/eraser"
+            android:src="@drawable/ic_eraser" />
+    </LinearLayout>
+
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:layout_gravity="top"
+        android:layout_marginTop="56dp"
+        android:background="@color/eink_rule" />
+
+    <!-- Bottom pagination -->
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:layout_gravity="bottom"
+        android:layout_marginBottom="48dp"
+        android:background="@color/eink_rule" />
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="48dp"
+        android:layout_gravity="bottom"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:background="@color/eink_white">
+
+        <ImageView
+            android:id="@+id/prev"
+            android:layout_width="72dp"
+            android:layout_height="match_parent"
+            android:padding="10dp"
+            android:contentDescription="@string/previous_page"
+            android:src="@drawable/ic_chevron_left" />
+
+        <TextView
+            android:id="@+id/pageIndicator"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:gravity="center"
+            android:textColor="@color/eink_rule"
+            android:textSize="13sp" />
+
+        <ImageView
+            android:id="@+id/next"
+            android:layout_width="72dp"
+            android:layout_height="match_parent"
+            android:padding="10dp"
+            android:contentDescription="@string/next_page"
+            android:src="@drawable/ic_chevron_right" />
+    </LinearLayout>
+</FrameLayout>

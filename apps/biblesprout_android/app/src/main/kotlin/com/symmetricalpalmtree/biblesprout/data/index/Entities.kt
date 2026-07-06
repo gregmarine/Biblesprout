@@ -79,3 +79,43 @@ data class Highlight(
     @ColumnInfo(name = "end_word") val endWord: Int,
     @ColumnInfo(name = "created_at") val createdAt: Long,
 )
+
+/**
+ * A handwritten notebook, anchored to a scripture span by canonical verse keys —
+ * the reading context it was opened from (a chapter from the reader, a passage
+ * from the passage view). Keyed by [startKey]/[endKey] like a commentary entry, so
+ * the same span always reopens the same notebook. One notebook per distinct span
+ * (the unique index). It owns ordered [NotePage]s.
+ */
+@Entity(tableName = "note_notebook", indices = [Index("start_key", "end_key", unique = true)])
+data class NoteNotebook(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    @ColumnInfo(name = "start_key") val startKey: Int,
+    @ColumnInfo(name = "end_key") val endKey: Int,
+    @ColumnInfo(name = "created_at") val createdAt: Long,
+    @ColumnInfo(name = "updated_at") val updatedAt: Long,
+)
+
+/** One page within a notebook, ordered by [pageIndex]. Holds [NoteStroke]s. */
+@Entity(tableName = "note_page", indices = [Index("notebook_id")])
+data class NotePage(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    @ColumnInfo(name = "notebook_id") val notebookId: Long,
+    @ColumnInfo(name = "page_index") val pageIndex: Int,
+)
+
+/**
+ * One pen stroke on a page. [points] is a packed little-endian float BLOB of
+ * `x, y` samples in canvas pixels (queried whole per page and drawn directly —
+ * no per-point parsing). Whole-stroke erase deletes the row, so no sub-stroke
+ * geometry is kept.
+ */
+@Entity(tableName = "note_stroke", indices = [Index("page_id")])
+data class NoteStroke(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    @ColumnInfo(name = "page_id") val pageId: Long,
+    val points: ByteArray,
+    val width: Float,
+    val color: Int,
+    @ColumnInfo(name = "created_at") val createdAt: Long,
+)

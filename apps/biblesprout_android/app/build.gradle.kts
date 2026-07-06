@@ -43,6 +43,19 @@ android {
         noCompress += setOf("bible", "commentary")
     }
 
+    packaging {
+        jniLibs {
+            // The Onyx SDK ships its own libc++_shared.so; take the first to avoid
+            // a duplicate-native-library merge conflict with other deps.
+            pickFirsts += setOf(
+                "lib/arm64-v8a/libc++_shared.so",
+                "lib/armeabi-v7a/libc++_shared.so",
+                "lib/x86/libc++_shared.so",
+                "lib/x86_64/libc++_shared.so",
+            )
+        }
+    }
+
     // The content DBs are bundled from the repo-root /data folder at build time
     // (see the bundleContentDbs task below) rather than committed under the app.
     sourceSets["main"].assets.srcDir(layout.buildDirectory.dir("generated/contentAssets"))
@@ -79,6 +92,14 @@ dependencies {
     // Coroutines for off-main-thread DB work; lifecycleScope for UI.
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7")
+
+    // Onyx BOOX SDK — handwriting capture (TouchHelper raw drawing) + EPD refresh
+    // control. Same versions proven in notesprout_android.
+    implementation("com.onyx.android.sdk:onyxsdk-device:1.3.3")
+    implementation("com.onyx.android.sdk:onyxsdk-pen:1.5.4")
+    // The BOOX SDK reflects into hidden Android APIs; Android 14+ blocks the
+    // self-exemption it needs, so bypass the enforcement before any SDK code runs.
+    implementation("org.lsposed.hiddenapibypass:hiddenapibypass:4.3")
 
     testImplementation("junit:junit:4.13.2")
 }

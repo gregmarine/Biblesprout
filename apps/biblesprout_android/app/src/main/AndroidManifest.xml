@@ -43,6 +43,10 @@
         <activity
             android:name=".ui.BookmarksActivity"
             android:exported="false" />
+
+        <activity
+            android:name=".ui.NoteActivity"
+            android:exported="false" />
     </application>
 
 </manifest>

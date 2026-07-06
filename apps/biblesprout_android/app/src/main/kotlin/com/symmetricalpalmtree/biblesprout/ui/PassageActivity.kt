@@ -76,6 +76,7 @@ class PassageActivity : AppCompatActivity() {
         attachGestures()
 
         binding.notes.setOnClickListener { openPassageCommentary() }
+        binding.notebook.setOnClickListener { openPassageNotebook() }
 
         val query = intent.getStringExtra(EXTRA_QUERY).orEmpty()
         lifecycleScope.launch {
@@ -97,6 +98,14 @@ class PassageActivity : AppCompatActivity() {
         val ranges = passages.flatMap { it.ranges }
         if (ranges.isEmpty()) return
         CommentaryLauncher.open(this, ranges, binding.title.text.toString())
+    }
+
+    /** Opens the handwritten notebook for this passage (its overall key span). */
+    private fun openPassageNotebook() {
+        if (passages.isEmpty()) return
+        val lo = passages.minOf { it.startKey }
+        val hi = passages.maxOf { it.endKey }
+        startActivity(NoteActivity.intent(this, lo, hi, binding.title.text.toString()))
     }
 
     /** Opens commentary anchored to the verse under a long-press, if any. */

@@ -44,6 +44,12 @@
     <string name="remove_bookmark">Remove bookmark</string>
     <string name="no_bookmarks">No bookmarks yet.\nTap the ribbon in the reader to save your place.</string>
 
+    <!-- Handwritten notes -->
+    <!-- %1$s = reference (e.g. "John 3 · Notes") -->
+    <string name="note_title">%1$s · Notes</string>
+    <string name="pen">Pen</string>
+    <string name="eraser">Eraser</string>
+
     <!-- Highlights -->
     <string name="highlight">Highlight</string>
     <string name="highlight_hint_first">Tap the first word to highlight</string>

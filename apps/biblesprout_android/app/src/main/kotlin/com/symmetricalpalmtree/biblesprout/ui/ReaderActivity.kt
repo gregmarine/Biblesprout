@@ -75,8 +75,28 @@ class ReaderActivity : AppCompatActivity() {
     private var chapterHighlights: List<Highlight> = emptyList()
     private var highlightMode = false
     private var selAnchor: WordRef? = null
-    private var pendingCreate: Highlight? = null
+    // A selection can span verses/paragraphs (and pages), so it is a list of per-verse rows.
+    private var pendingCreates: List<Highlight> = emptyList()
     private var pendingRemove: Highlight? = null
+    // The whole chapter's words in reading order — the selection is defined against these
+    // (page-independent) so it can span pages and survives repagination/font changes. The
+    // current page's words are a subset, used to find the boundary word when auto-turning.
+    private var chapterWords: List<WordRef> = emptyList()
+    private var pageWordList: List<WordRef> = emptyList()
+    // Stylus drag-select: whether the pen has crossed off its start word and the last word
+    // it settled on (so we only redraw on a change).
+    private var dragMoved = false
+    private var lastDragEnd: WordRef? = null
+    // Edge dwell for cross-page turns: the page turns only when the pen *holds still* at an
+    // edge (so moving to select near an edge never turns). Tracks the held direction, when
+    // the hold began, and where — a real move resets it.
+    private var edgeDwellDir = 0
+    private var edgeDwellStart = 0L
+    private var edgeAnchorX = 0f
+    private var edgeAnchorY = 0f
+    // Once a drag turns a page, it can only keep turning the same way — so after going to
+    // the next page you can hold near its top (to grab the first line) without flipping back.
+    private var turnLockDir = 0
 
     private val safetyPad by lazy { typo.dp(8f) }
 
@@ -195,10 +215,19 @@ class ReaderActivity : AppCompatActivity() {
      *  selection preview (the anchor word, or the full pending span). */
     private fun highlightRangesForPage(): List<IntRange> {
         if (pages.isEmpty()) return emptyList()
-        val preview = pendingCreate ?: selAnchor?.let {
-            Highlight(verseKey = it.verseKey, startWord = it.wordIndex, endWord = it.wordIndex, createdAt = 0)
+        val preview: List<Highlight> = when {
+            pendingCreates.isNotEmpty() -> pendingCreates
+            selAnchor != null -> listOf(
+                Highlight(
+                    verseKey = selAnchor!!.verseKey,
+                    startWord = selAnchor!!.wordIndex,
+                    endWord = selAnchor!!.wordIndex,
+                    createdAt = 0,
+                ),
+            )
+            else -> emptyList()
         }
-        val effective = if (preview != null) chapterHighlights + preview else chapterHighlights
+        val effective = chapterHighlights + preview
         val spans = effective.groupBy { it.verseKey }
             .mapValues { (_, list) -> list.map { it.startWord..it.endWord } }
         val seed = pageSeeds.getOrElse(page) {
@@ -213,7 +242,8 @@ class ReaderActivity : AppCompatActivity() {
 
     private fun enterHighlightMode() {
         highlightMode = true
-        selAnchor = null; pendingCreate = null; pendingRemove = null
+        selAnchor = null; pendingCreates = emptyList(); pendingRemove = null
+        dragMoved = false; lastDragEnd = null
         // The mode bar at the bottom signals that highlight mode is active.
         binding.pageIndicator.visibility = View.GONE
         binding.highlightBar.visibility = View.VISIBLE
@@ -223,14 +253,16 @@ class ReaderActivity : AppCompatActivity() {
 
     private fun exitHighlightMode() {
         highlightMode = false
-        selAnchor = null; pendingCreate = null; pendingRemove = null
+        selAnchor = null; pendingCreates = emptyList(); pendingRemove = null
+        dragMoved = false; lastDragEnd = null
         binding.highlightBar.visibility = View.GONE
         binding.pageIndicator.visibility = View.VISIBLE
         renderCurrentPage()
     }
 
-    /** In highlight mode, a tap picks words: the first, then the last of a phrase;
-     *  a tap inside an existing highlight offers to remove it. */
+    /** In highlight mode, a finger tap picks words: the first, then the last of a
+     *  phrase (which may span verses); a tap inside an existing highlight offers to
+     *  remove it. The stylus drag-selects instead (see [handleHighlightStylus]). */
     private fun handleHighlightTap(x: Float, y: Float) {
         val ref = wordRefAt(x, y) ?: return
         val existing = chapterHighlights.firstOrNull {
@@ -239,19 +271,14 @@ class ReaderActivity : AppCompatActivity() {
         val anchor = selAnchor
         when {
             anchor == null && existing != null -> {
-                pendingRemove = existing; pendingCreate = null
+                pendingRemove = existing; pendingCreates = emptyList()
             }
-            anchor == null || anchor.verseKey != ref.verseKey -> {
-                selAnchor = ref; pendingCreate = null; pendingRemove = null
+            anchor == null -> {
+                selAnchor = ref; pendingCreates = emptyList(); pendingRemove = null
             }
             else -> {
-                pendingCreate = Highlight(
-                    verseKey = anchor.verseKey,
-                    startWord = minOf(anchor.wordIndex, ref.wordIndex),
-                    endWord = maxOf(anchor.wordIndex, ref.wordIndex),
-                    createdAt = System.currentTimeMillis(),
-                )
-                pendingRemove = null
+                pendingCreates = buildSelection(anchor, ref)
+                pendingRemove = null; selAnchor = null
             }
         }
         updateHighlightBar()
@@ -272,14 +299,183 @@ class ReaderActivity : AppCompatActivity() {
         return typo.wordAtOffset(pages[page], seed, offset)
     }
 
+    /**
+     * Stylus phrase selection: press on the first word and drag to the last, with every
+     * word between underlined in real time — across lines, verses and paragraphs (drag
+     * straight down the left edge to grab whole sentences). Releasing shows Save. A
+     * press-release with no drag falls back to single-word select, or offers Remove on
+     * an existing highlight. Runs only for the stylus (finger keeps the two-tap flow).
+     */
+    private fun handleHighlightStylus(event: MotionEvent): Boolean {
+        when (event.actionMasked) {
+            MotionEvent.ACTION_DOWN -> {
+                val ref = wordRefAt(event.x, event.y)
+                selAnchor = ref
+                pendingCreates = emptyList()
+                pendingRemove = null
+                dragMoved = false
+                lastDragEnd = ref
+                edgeDwellDir = 0
+                turnLockDir = 0
+                updateHighlightBar()
+                refreshHighlightPreview()
+            }
+            MotionEvent.ACTION_MOVE -> {
+                val anchor = selAnchor ?: return true
+                // Holding the pen still at the top/bottom edge turns the page, so the gesture
+                // can continue the selection across a page break. A dwell (not mere presence)
+                // is required so that *moving* to select near an edge never turns the page.
+                val edge = typo.dp(52f)
+                val zone = when {
+                    event.y >= binding.reader.height - edge -> +1
+                    event.y <= edge -> -1
+                    else -> 0
+                }
+                if (zone != 0 && (page + zone) in pages.indices) {
+                    val thresh = typo.dp(16f)
+                    val movedFar = (event.x - edgeAnchorX).let { it * it } +
+                        (event.y - edgeAnchorY).let { it * it } > thresh * thresh
+                    if (zone != edgeDwellDir || movedFar) {
+                        edgeDwellDir = zone
+                        edgeDwellStart = System.currentTimeMillis()
+                        edgeAnchorX = event.x; edgeAnchorY = event.y
+                    } else if (System.currentTimeMillis() - edgeDwellStart >= EDGE_DWELL_MS &&
+                        (turnLockDir == 0 || zone == turnLockDir)
+                    ) {
+                        // A drag turns pages one way only: once we've gone (say) forward, a hold
+                        // at the top edge to grab the new page's first line won't flip back.
+                        turnLockDir = zone
+                        autoTurn(zone)
+                        edgeDwellStart = System.currentTimeMillis() // require another hold to turn again
+                        return true
+                    }
+                } else {
+                    edgeDwellDir = 0
+                }
+                val cur = wordRefAt(event.x, event.y) ?: return true
+                if (cur == lastDragEnd) return true // same word — no redraw
+                lastDragEnd = cur
+                if (cur != anchor) dragMoved = true
+                pendingCreates = buildSelection(anchor, cur)
+                pendingRemove = null
+                updateHighlightBar()
+                refreshHighlightPreview()
+            }
+            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                val anchor = selAnchor
+                if (anchor != null && !dragMoved) {
+                    // A tap, not a drag: remove if inside an existing highlight, else one word.
+                    val existing = chapterHighlights.firstOrNull {
+                        it.verseKey == anchor.verseKey && anchor.wordIndex in it.startWord..it.endWord
+                    }
+                    if (existing != null) {
+                        pendingRemove = existing; pendingCreates = emptyList()
+                    } else {
+                        pendingCreates = buildSelection(anchor, anchor)
+                    }
+                }
+                selAnchor = null
+                updateHighlightBar()
+                renderCurrentPage()
+                persist() // the drag may have auto-turned pages; save where we ended
+            }
+        }
+        return true
+    }
+
+    /**
+     * During a stylus selection drag, turn the page (keeping the anchor) so the selection
+     * continues onto the new page. Gated by an edge dwell in the caller. The selection
+     * extends to the new page's boundary word so the preview reflects the turn at once;
+     * continued dragging on the new page refines it.
+     */
+    private fun autoTurn(dir: Int) {
+        val target = page + dir
+        if (target < 0 || target >= pages.size) return
+        page = target
+        renderCurrentPage() // rebuilds pageWordList for the new page; chapterWords is unchanged
+        val anchor = selAnchor
+        val boundary = if (dir > 0) pageWordList.firstOrNull() else pageWordList.lastOrNull()
+        if (anchor != null && boundary != null) {
+            lastDragEnd = boundary
+            if (boundary != anchor) dragMoved = true
+            pendingCreates = buildSelection(anchor, boundary)
+            updateHighlightBar()
+            refreshHighlightPreview()
+        }
+    }
+
+    /**
+     * The per-verse highlight rows covering every word between two words in the chapter,
+     * in reading order — one row per verse the span touches (partial at the ends, whole
+     * for verses in the middle). Chapter-wide, so the span may cross pages. Empty if
+     * either word isn't in the chapter.
+     */
+    private fun buildSelection(a: WordRef, b: WordRef): List<Highlight> {
+        val words = chapterWords
+        val ia = words.indexOf(a)
+        val ib = words.indexOf(b)
+        if (ia < 0 || ib < 0) return emptyList()
+        val lo = minOf(ia, ib)
+        val hi = maxOf(ia, ib)
+        val now = System.currentTimeMillis()
+        val rows = ArrayList<Highlight>()
+        var vKey = words[lo].verseKey
+        var vMin = words[lo].wordIndex
+        var vMax = words[lo].wordIndex
+        for (k in lo + 1..hi) {
+            val w = words[k]
+            if (w.verseKey == vKey) {
+                vMax = w.wordIndex // reading order → word index increases within a verse
+            } else {
+                rows.add(Highlight(verseKey = vKey, startWord = vMin, endWord = vMax, createdAt = now))
+                vKey = w.verseKey; vMin = w.wordIndex; vMax = w.wordIndex
+            }
+        }
+        rows.add(Highlight(verseKey = vKey, startWord = vMin, endWord = vMax, createdAt = now))
+        return rows
+    }
+
+    /** One page's words in reading order (verse + word index); used for auto-turn boundaries. */
+    private fun pageWords(pageIndex: Int): List<WordRef> {
+        val atoms = pages.getOrNull(pageIndex) ?: return emptyList()
+        val seed = pageSeeds.getOrElse(pageIndex) {
+            WordRef(VerseKey.encode(ref.bookIndex + 1, ref.chapterNumber, 1), 0)
+        }
+        var verse = seed.verseKey
+        var wordIdx = seed.wordIndex
+        val out = ArrayList<WordRef>()
+        for (atom in atoms) when (atom) {
+            is NumberAtom -> { verse = atom.verseKey; wordIdx = 0 }
+            is WordAtom -> { out.add(WordRef(verse, wordIdx)); wordIdx += 1 }
+        }
+        return out
+    }
+
+    /** The whole chapter's words in reading order — the pages concatenated. */
+    private fun buildChapterWords(): List<WordRef> =
+        pages.indices.flatMap { pageWords(it) }
+
+    /** Repaints just the preview underlines (no relayout) — cheap enough per drag word. */
+    private fun refreshHighlightPreview() {
+        if (pages.isEmpty()) return
+        binding.reader.bodyHighlights = highlightRangesForPage()
+    }
+
     private fun updateHighlightBar() {
         when {
             pendingRemove != null -> {
                 binding.highlightHint.text = getString(R.string.highlight_hint_existing)
                 showHighlightAction(getString(R.string.remove))
             }
-            pendingCreate != null -> {
-                binding.highlightHint.text = verseLabel(pendingCreate!!.verseKey)
+            pendingCreates.isNotEmpty() -> {
+                val first = pendingCreates.first().verseKey
+                val last = pendingCreates.last().verseKey
+                binding.highlightHint.text = if (first == last) {
+                    verseLabel(first)
+                } else {
+                    "${verseLabel(first)}–${VerseKey.verseOf(last)}"
+                }
                 showHighlightAction(getString(R.string.save))
             }
             selAnchor != null -> {
@@ -303,18 +499,19 @@ class ReaderActivity : AppCompatActivity() {
         return "${book.name} ${VerseKey.chapterOf(verseKey)}:${VerseKey.verseOf(verseKey)}"
     }
 
-    /** Persists the pending highlight or removal, then stays in mode for more. */
+    /** Persists the pending highlight(s) or removal, then stays in mode for more. */
     private fun commitHighlightAction() {
-        val create = pendingCreate
+        val creates = pendingCreates
         val remove = pendingRemove
         lifecycleScope.launch {
             val dao = AppServices.index.highlights()
             when {
                 remove != null -> withContext(Dispatchers.IO) { dao.removeById(remove.id) }
-                create != null -> withContext(Dispatchers.IO) { dao.add(create) }
+                creates.isNotEmpty() -> withContext(Dispatchers.IO) { creates.forEach { dao.add(it) } }
                 else -> return@launch
             }
-            selAnchor = null; pendingCreate = null; pendingRemove = null
+            selAnchor = null; pendingCreates = emptyList(); pendingRemove = null
+            dragMoved = false; lastDragEnd = null
             reloadChapterHighlights()
             updateHighlightBar()
             renderCurrentPage()
@@ -435,6 +632,7 @@ class ReaderActivity : AppCompatActivity() {
             pages = packed
             pageAnchors = computeAnchors(packed, ref.bookIndex + 1, ref.chapterNumber)
             pageSeeds = computeSeeds(packed, ref.bookIndex + 1, ref.chapterNumber)
+            chapterWords = buildChapterWords()
             reloadChapterHighlights()
             if (pendingLastPage) {
                 page = pages.size - 1
@@ -468,6 +666,7 @@ class ReaderActivity : AppCompatActivity() {
             ReaderPage(body)
         }
         currentBody = body
+        pageWordList = pageWords(page)
         binding.reader.bodyHighlights = highlightRangesForPage()
         binding.title.text = getString(R.string.reader_title, book.name, chapter.number)
         binding.pageIndicator.text = getString(R.string.page_indicator, page + 1, pages.size)
@@ -513,7 +712,16 @@ class ReaderActivity : AppCompatActivity() {
                 return true
             }
         })
-        binding.reader.setOnTouchListener { _, event -> detector.onTouchEvent(event) }
+        binding.reader.setOnTouchListener { _, event ->
+            // In highlight mode the stylus drag-selects a phrase; everything else
+            // (finger taps/flings, and all touches outside highlight mode) goes to the
+            // gesture detector — so finger two-tap selection and page turns are unchanged.
+            if (highlightMode && event.getToolType(0) == MotionEvent.TOOL_TYPE_STYLUS) {
+                handleHighlightStylus(event)
+            } else {
+                detector.onTouchEvent(event)
+            }
+        }
     }
 
     private fun goFullScreenImmersive() {
@@ -527,6 +735,7 @@ class ReaderActivity : AppCompatActivity() {
 
     companion object {
         private const val FULL_REFRESH_EVERY = 6
+        private const val EDGE_DWELL_MS = 400L
         const val EXTRA_BOOK_INDEX = "book_index"
         const val EXTRA_CHAPTER = "chapter"
         const val EXTRA_START_PAGE = "start_page"

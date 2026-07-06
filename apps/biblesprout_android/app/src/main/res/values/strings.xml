@@ -57,7 +57,7 @@
 
     <!-- Highlights -->
     <string name="highlight">Highlight</string>
-    <string name="highlight_hint_first">Tap the first word to highlight</string>
+    <string name="highlight_hint_first">Drag across the words to highlight</string>
     <string name="highlight_hint_last">Now tap the last word</string>
     <string name="highlight_hint_existing">Remove this highlight?</string>
     <string name="save">Save</string>

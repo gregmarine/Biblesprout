@@ -15,3 +15,11 @@ sealed interface Atom
 data class NumberAtom(val number: Int, val verseKey: Int) : Atom
 
 data class WordAtom(val word: String) : Atom
+
+/**
+ * A single word's address for highlight selection: which verse it belongs to and
+ * its 0-based position among that verse's words (the verse number aside). Stable
+ * across pagination, so a highlight stored as a word span underlines the same
+ * words however the text repaginates.
+ */
+data class WordRef(val verseKey: Int, val wordIndex: Int)

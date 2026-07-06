@@ -14,9 +14,11 @@ import androidx.lifecycle.lifecycleScope
 import com.symmetricalpalmtree.biblesprout.MainActivity
 import com.symmetricalpalmtree.biblesprout.R
 import com.symmetricalpalmtree.biblesprout.data.AppServices
+import com.symmetricalpalmtree.biblesprout.data.Canon
 import com.symmetricalpalmtree.biblesprout.data.VerseKey
 import com.symmetricalpalmtree.biblesprout.data.VerseRange
 import com.symmetricalpalmtree.biblesprout.data.index.Bookmark
+import com.symmetricalpalmtree.biblesprout.data.index.Highlight
 import com.symmetricalpalmtree.biblesprout.data.index.ReadingPosition
 import com.symmetricalpalmtree.biblesprout.databinding.ActivityReaderBinding
 import com.symmetricalpalmtree.biblesprout.model.ChapterRef
@@ -26,6 +28,8 @@ import com.symmetricalpalmtree.biblesprout.reader.CommentaryLauncher
 import com.symmetricalpalmtree.biblesprout.reader.NumberAtom
 import com.symmetricalpalmtree.biblesprout.reader.ReaderPage
 import com.symmetricalpalmtree.biblesprout.reader.ReaderTypography
+import com.symmetricalpalmtree.biblesprout.reader.WordAtom
+import com.symmetricalpalmtree.biblesprout.reader.WordRef
 import android.text.StaticLayout
 import android.view.View
 import kotlinx.coroutines.Dispatchers
@@ -65,6 +69,15 @@ class ReaderActivity : AppCompatActivity() {
     private var pageAnchors: List<Int> = emptyList()
     private var bookmarkedKeys: Set<Int> = emptySet()
 
+    // Highlights: the current chapter's saved highlights, the per-page word seed
+    // (verse + word count carried into each page), and the in-progress selection.
+    private var pageSeeds: List<WordRef> = emptyList()
+    private var chapterHighlights: List<Highlight> = emptyList()
+    private var highlightMode = false
+    private var selAnchor: WordRef? = null
+    private var pendingCreate: Highlight? = null
+    private var pendingRemove: Highlight? = null
+
     private val safetyPad by lazy { typo.dp(8f) }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -91,6 +104,9 @@ class ReaderActivity : AppCompatActivity() {
         binding.contents.setOnClickListener { openContents() }
         binding.notes.setOnClickListener { openChapterCommentary() }
         binding.bookmark.setOnClickListener { toggleBookmark() }
+        binding.highlight.setOnClickListener { toggleHighlightMode() }
+        binding.highlightAction.setOnClickListener { commitHighlightAction() }
+        binding.highlightDone.setOnClickListener { exitHighlightMode() }
         attachGestures()
 
         lifecycleScope.launch {
@@ -146,6 +162,162 @@ class ReaderActivity : AppCompatActivity() {
             (atoms.lastOrNull { it is NumberAtom } as? NumberAtom)?.let { lastKey = it.verseKey }
         }
         return anchors
+    }
+
+    // --- Highlights -----------------------------------------------------------
+
+    /** The word (verse + word count) carried into the start of each page, so a
+     *  highlight's word span underlines the same words however the text paginates. */
+    private fun computeSeeds(pages: List<List<Atom>>, ordinal: Int, chapter: Int): List<WordRef> {
+        var verse = VerseKey.encode(ordinal, chapter, 1)
+        var words = 0
+        val seeds = ArrayList<WordRef>(pages.size)
+        for (atoms in pages) {
+            seeds.add(WordRef(verse, words))
+            for (a in atoms) when (a) {
+                is NumberAtom -> { verse = a.verseKey; words = 0 }
+                is WordAtom -> words += 1
+            }
+        }
+        return seeds
+    }
+
+    private suspend fun reloadChapterHighlights() {
+        val ordinal = ref.bookIndex + 1
+        val (lo, hi) = VerseKey.chapterBounds(ordinal, ref.chapterNumber)
+        chapterHighlights = withContext(Dispatchers.IO) {
+            AppServices.index.highlights().inRange(lo, hi)
+        }
+    }
+
+    /** Underline ranges for the current page: saved highlights plus any in-progress
+     *  selection preview (the anchor word, or the full pending span). */
+    private fun highlightRangesForPage(): List<IntRange> {
+        if (pages.isEmpty()) return emptyList()
+        val preview = pendingCreate ?: selAnchor?.let {
+            Highlight(verseKey = it.verseKey, startWord = it.wordIndex, endWord = it.wordIndex, createdAt = 0)
+        }
+        val effective = if (preview != null) chapterHighlights + preview else chapterHighlights
+        val spans = effective.groupBy { it.verseKey }
+            .mapValues { (_, list) -> list.map { it.startWord..it.endWord } }
+        val seed = pageSeeds.getOrElse(page) {
+            WordRef(VerseKey.encode(ref.bookIndex + 1, ref.chapterNumber, 1), 0)
+        }
+        return typo.highlightRanges(pages[page], seed, spans)
+    }
+
+    private fun toggleHighlightMode() {
+        if (highlightMode) exitHighlightMode() else enterHighlightMode()
+    }
+
+    private fun enterHighlightMode() {
+        highlightMode = true
+        selAnchor = null; pendingCreate = null; pendingRemove = null
+        // The mode bar at the bottom signals that highlight mode is active.
+        binding.pageIndicator.visibility = View.GONE
+        binding.highlightBar.visibility = View.VISIBLE
+        updateHighlightBar()
+        renderCurrentPage()
+    }
+
+    private fun exitHighlightMode() {
+        highlightMode = false
+        selAnchor = null; pendingCreate = null; pendingRemove = null
+        binding.highlightBar.visibility = View.GONE
+        binding.pageIndicator.visibility = View.VISIBLE
+        renderCurrentPage()
+    }
+
+    /** In highlight mode, a tap picks words: the first, then the last of a phrase;
+     *  a tap inside an existing highlight offers to remove it. */
+    private fun handleHighlightTap(x: Float, y: Float) {
+        val ref = wordRefAt(x, y) ?: return
+        val existing = chapterHighlights.firstOrNull {
+            it.verseKey == ref.verseKey && ref.wordIndex in it.startWord..it.endWord
+        }
+        val anchor = selAnchor
+        when {
+            anchor == null && existing != null -> {
+                pendingRemove = existing; pendingCreate = null
+            }
+            anchor == null || anchor.verseKey != ref.verseKey -> {
+                selAnchor = ref; pendingCreate = null; pendingRemove = null
+            }
+            else -> {
+                pendingCreate = Highlight(
+                    verseKey = anchor.verseKey,
+                    startWord = minOf(anchor.wordIndex, ref.wordIndex),
+                    endWord = maxOf(anchor.wordIndex, ref.wordIndex),
+                    createdAt = System.currentTimeMillis(),
+                )
+                pendingRemove = null
+            }
+        }
+        updateHighlightBar()
+        renderCurrentPage()
+    }
+
+    private fun wordRefAt(x: Float, y: Float): WordRef? {
+        val body = currentBody ?: return null
+        if (pages.isEmpty()) return null
+        val localX = (x - binding.reader.horizontalPad).toInt()
+        val localY = (y - binding.reader.verticalPad - bodyTopPx).toInt()
+        if (localY < 0 || localY > body.height) return null
+        val line = body.getLineForVertical(localY)
+        val offset = body.getOffsetForHorizontal(line, localX.toFloat())
+        val seed = pageSeeds.getOrElse(page) {
+            WordRef(VerseKey.encode(ref.bookIndex + 1, ref.chapterNumber, 1), 0)
+        }
+        return typo.wordAtOffset(pages[page], seed, offset)
+    }
+
+    private fun updateHighlightBar() {
+        when {
+            pendingRemove != null -> {
+                binding.highlightHint.text = getString(R.string.highlight_hint_existing)
+                showHighlightAction(getString(R.string.remove))
+            }
+            pendingCreate != null -> {
+                binding.highlightHint.text = verseLabel(pendingCreate!!.verseKey)
+                showHighlightAction(getString(R.string.save))
+            }
+            selAnchor != null -> {
+                binding.highlightHint.text = getString(R.string.highlight_hint_last)
+                binding.highlightAction.visibility = View.GONE
+            }
+            else -> {
+                binding.highlightHint.text = getString(R.string.highlight_hint_first)
+                binding.highlightAction.visibility = View.GONE
+            }
+        }
+    }
+
+    private fun showHighlightAction(label: String) {
+        binding.highlightAction.text = label
+        binding.highlightAction.visibility = View.VISIBLE
+    }
+
+    private fun verseLabel(verseKey: Int): String {
+        val book = Canon.byOrdinal(VerseKey.ordinalOf(verseKey))
+        return "${book.name} ${VerseKey.chapterOf(verseKey)}:${VerseKey.verseOf(verseKey)}"
+    }
+
+    /** Persists the pending highlight or removal, then stays in mode for more. */
+    private fun commitHighlightAction() {
+        val create = pendingCreate
+        val remove = pendingRemove
+        lifecycleScope.launch {
+            val dao = AppServices.index.highlights()
+            when {
+                remove != null -> withContext(Dispatchers.IO) { dao.removeById(remove.id) }
+                create != null -> withContext(Dispatchers.IO) { dao.add(create) }
+                else -> return@launch
+            }
+            selAnchor = null; pendingCreate = null; pendingRemove = null
+            reloadChapterHighlights()
+            updateHighlightBar()
+            renderCurrentPage()
+        }
     }
 
     /** Opens commentary for the whole chapter in view. */
@@ -253,6 +425,8 @@ class ReaderActivity : AppCompatActivity() {
             }
             pages = packed
             pageAnchors = computeAnchors(packed, ref.bookIndex + 1, ref.chapterNumber)
+            pageSeeds = computeSeeds(packed, ref.bookIndex + 1, ref.chapterNumber)
+            reloadChapterHighlights()
             if (pendingLastPage) {
                 page = pages.size - 1
                 pendingLastPage = false
@@ -285,6 +459,7 @@ class ReaderActivity : AppCompatActivity() {
             ReaderPage(body)
         }
         currentBody = body
+        binding.reader.bodyHighlights = highlightRangesForPage()
         binding.title.text = getString(R.string.reader_title, book.name, chapter.number)
         binding.pageIndicator.text = getString(R.string.page_indicator, page + 1, pages.size)
         updateBookmarkIcon()
@@ -298,6 +473,10 @@ class ReaderActivity : AppCompatActivity() {
             override fun onDown(e: MotionEvent) = true
 
             override fun onSingleTapUp(e: MotionEvent): Boolean {
+                if (highlightMode) {
+                    handleHighlightTap(e.x, e.y)
+                    return true
+                }
                 val third = binding.reader.width / 3f
                 when {
                     e.x < third -> prevPage()
@@ -310,8 +489,8 @@ class ReaderActivity : AppCompatActivity() {
             override fun onLongPress(e: MotionEvent) {
                 // The superscript number is too small a tap target on e-ink, and
                 // tap/swipe already turn pages — so a long-press opens commentary
-                // for the pressed verse.
-                openVerseCommentary(e.x, e.y)
+                // for the pressed verse. (Suspended in highlight mode.)
+                if (!highlightMode) openVerseCommentary(e.x, e.y)
             }
 
             override fun onFling(

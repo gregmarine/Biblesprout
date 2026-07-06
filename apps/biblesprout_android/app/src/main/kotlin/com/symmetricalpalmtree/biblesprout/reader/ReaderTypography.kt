@@ -149,6 +149,93 @@ class ReaderTypography(context: Context) {
         return key
     }
 
+    /**
+     * The word (verse + word index) at character [offset] on a page. [seed] gives
+     * the verse and word count carried into the page's first atom, so a verse split
+     * across pages keeps counting its words. Returns the exact word hit, else the
+     * nearest word starting at or before [offset] (so tapping a gap still targets a
+     * word), or null before the first word.
+     */
+    fun wordAtOffset(atoms: List<Atom>, seed: WordRef, offset: Int): WordRef? {
+        var pos = 0
+        var verse = seed.verseKey
+        var wordIdx = seed.wordIndex
+        var nearest: WordRef? = null
+        for (i in atoms.indices) {
+            when (val atom = atoms[i]) {
+                is NumberAtom -> {
+                    if (i > 0) pos += 1
+                    pos += atom.number.toString().length
+                    verse = atom.verseKey
+                    wordIdx = 0
+                }
+                is WordAtom -> {
+                    if (i > 0) pos += 1
+                    val start = pos
+                    pos += atom.word.length
+                    if (offset in start until pos) return WordRef(verse, wordIdx)
+                    if (start <= offset) nearest = WordRef(verse, wordIdx)
+                    wordIdx += 1
+                }
+            }
+        }
+        return nearest
+    }
+
+    /**
+     * The character ranges (as `start until end`) to underline on a page, for the
+     * given highlighted word spans per verse ([spansByVerse] maps a verse key to
+     * its inclusive `startWord..endWord` runs). [seed] carries the verse/word count
+     * into the page. Adjacent highlighted words are merged into one continuous
+     * underline (the joining space included). Retraces [spannable]'s char offsets.
+     */
+    fun highlightRanges(
+        atoms: List<Atom>,
+        seed: WordRef,
+        spansByVerse: Map<Int, List<IntRange>>,
+    ): List<IntRange> {
+        if (spansByVerse.isEmpty()) return emptyList()
+        var pos = 0
+        var verse = seed.verseKey
+        var wordIdx = seed.wordIndex
+        val words = ArrayList<IntRange>() // per highlighted word, start until end
+        for (i in atoms.indices) {
+            when (val atom = atoms[i]) {
+                is NumberAtom -> {
+                    if (i > 0) pos += 1
+                    pos += atom.number.toString().length
+                    verse = atom.verseKey
+                    wordIdx = 0
+                }
+                is WordAtom -> {
+                    if (i > 0) pos += 1
+                    val start = pos
+                    pos += atom.word.length
+                    if (spansByVerse[verse]?.any { wordIdx in it } == true) {
+                        words.add(start until pos)
+                    }
+                    wordIdx += 1
+                }
+            }
+        }
+        // Merge words separated only by their joining space into one underline.
+        val merged = ArrayList<IntRange>()
+        var curStart = -1
+        var curEnd = -1
+        for (r in words) {
+            if (curStart < 0) {
+                curStart = r.first; curEnd = r.last + 1
+            } else if (r.first <= curEnd + 1) {
+                curEnd = maxOf(curEnd, r.last + 1)
+            } else {
+                merged.add(curStart until curEnd)
+                curStart = r.first; curEnd = r.last + 1
+            }
+        }
+        if (curStart >= 0) merged.add(curStart until curEnd)
+        return merged
+    }
+
     companion object {
         const val BLACK = 0xFF000000.toInt()
         private const val EXCL = Spanned.SPAN_EXCLUSIVE_EXCLUSIVE

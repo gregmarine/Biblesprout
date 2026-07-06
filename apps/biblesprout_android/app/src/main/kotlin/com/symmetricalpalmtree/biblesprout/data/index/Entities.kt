@@ -11,9 +11,9 @@ import androidx.room.PrimaryKey
  * User data addresses scripture by the same canonical verse keys the source
  * databases use. Ported from the Flutter `app_database.dart` schema.
  *
- * The remaining annotation tables (highlight/note/cross_link) from the Flutter
- * schema are intentionally not created yet — they'll be added with the feature
- * that writes them, so their columns can be settled then.
+ * The remaining annotation tables (note/cross_link) from the Flutter schema are
+ * intentionally not created yet — they'll be added with the feature that writes
+ * them, so their columns can be settled then.
  */
 
 /** App-wide preferences, e.g. the last-used commentary. Values are strings. */
@@ -62,5 +62,20 @@ data class ReadingProgress(
 data class Bookmark(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     @ColumnInfo(name = "verse_key") val verseKey: Int,
+    @ColumnInfo(name = "created_at") val createdAt: Long,
+)
+
+/**
+ * A highlighted phrase within one verse: the run of words [startWord]..[endWord]
+ * (inclusive, 0-based over the verse's words, verse number aside) of [verseKey].
+ * A verse may hold several highlights, so the verse-key index is non-unique. The
+ * reader underlines the run wherever the verse is drawn.
+ */
+@Entity(tableName = "highlight", indices = [Index("verse_key")])
+data class Highlight(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    @ColumnInfo(name = "verse_key") val verseKey: Int,
+    @ColumnInfo(name = "start_word") val startWord: Int,
+    @ColumnInfo(name = "end_word") val endWord: Int,
     @ColumnInfo(name = "created_at") val createdAt: Long,
 )

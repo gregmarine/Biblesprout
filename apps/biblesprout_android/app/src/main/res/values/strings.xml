@@ -43,4 +43,13 @@
     <string name="add_bookmark">Bookmark this place</string>
     <string name="remove_bookmark">Remove bookmark</string>
     <string name="no_bookmarks">No bookmarks yet.\nTap the ribbon in the reader to save your place.</string>
+
+    <!-- Highlights -->
+    <string name="highlight">Highlight</string>
+    <string name="highlight_hint_first">Tap the first word to highlight</string>
+    <string name="highlight_hint_last">Now tap the last word</string>
+    <string name="highlight_hint_existing">Remove this highlight?</string>
+    <string name="save">Save</string>
+    <string name="remove">Remove</string>
+    <string name="done">Done</string>
 </resources>

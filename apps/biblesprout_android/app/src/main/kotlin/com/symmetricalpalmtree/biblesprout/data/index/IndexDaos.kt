@@ -56,3 +56,16 @@ interface BookmarkDao {
     @Delete
     suspend fun remove(bookmark: Bookmark)
 }
+
+@Dao
+interface HighlightDao {
+    /** Highlights whose verse falls in an inclusive key range (e.g. one chapter). */
+    @Query("SELECT * FROM highlight WHERE verse_key BETWEEN :lo AND :hi ORDER BY verse_key, start_word")
+    suspend fun inRange(lo: Int, hi: Int): List<Highlight>
+
+    @Insert
+    suspend fun add(highlight: Highlight): Long
+
+    @Query("DELETE FROM highlight WHERE id = :id")
+    suspend fun removeById(id: Long)
+}

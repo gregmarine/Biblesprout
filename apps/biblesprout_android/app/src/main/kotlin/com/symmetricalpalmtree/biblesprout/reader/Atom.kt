@@ -29,6 +29,9 @@ data class BreakAtom(val flow: Flow) : Atom
 /** A centered section heading rendered inline in the flow (e.g. "The Creation"). */
 data class HeadingAtom(val text: String, val minor: Boolean) : Atom
 
+/** A tappable footnote caller anchored between words; [id] resolves the popup body. */
+data class FootnoteAtom(val id: Int) : Atom
+
 /**
  * A single word's address for highlight selection: which verse it belongs to and
  * its 0-based position among that verse's words (the verse number aside). Stable

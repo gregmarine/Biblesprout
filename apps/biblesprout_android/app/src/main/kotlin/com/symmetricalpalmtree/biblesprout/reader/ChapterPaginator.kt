@@ -1,5 +1,6 @@
 package com.symmetricalpalmtree.biblesprout.reader
 
+import com.symmetricalpalmtree.biblesprout.data.Footnote
 import com.symmetricalpalmtree.biblesprout.data.RenderBlock
 import com.symmetricalpalmtree.biblesprout.data.VerseKey
 import com.symmetricalpalmtree.biblesprout.model.Chapter
@@ -29,7 +30,8 @@ object ChapterPaginator {
      * [HeadingAtom], then its verse numbers and words. Verse-number spans in a
      * block's content are lifted out as [NumberAtom]s; the rest tokenizes to words.
      */
-    fun atomsForBlocks(blocks: List<RenderBlock>): List<Atom> {
+    fun atomsForBlocks(blocks: List<RenderBlock>, footnotes: List<Footnote>): List<Atom> {
+        val notesByBlock = footnotes.groupBy { it.blockId }
         val atoms = ArrayList<Atom>()
         for (block in blocks) {
             val heading = headingFor(block)
@@ -42,18 +44,30 @@ object ChapterPaginator {
                 continue
             }
             atoms.add(BreakAtom(flowFor(block.kind)))
-            tokenize(block, atoms)
+            tokenize(block, notesByBlock[block.id].orEmpty(), atoms)
         }
         return atoms
     }
 
-    /** Emits the block's content as NumberAtoms (at verse-marker spans) + WordAtoms. */
-    private fun tokenize(block: RenderBlock, out: ArrayList<Atom>) {
+    /**
+     * Emits the block's content as NumberAtoms (at verse-marker spans) + WordAtoms,
+     * splicing a [FootnoteAtom] wherever a footnote caller is anchored ([Footnote.offset]).
+     */
+    private fun tokenize(block: RenderBlock, notes: List<Footnote>, out: ArrayList<Atom>) {
         val content = block.content
         val marks = block.verses // sorted by start
+        val callers = notes.sortedBy { it.offset }
         var i = 0
         var mi = 0
+        var ni = 0
         while (i < content.length) {
+            // A footnote caller can sit between any two characters (usually right
+            // after a word/punctuation), so check it before words and numbers.
+            if (ni < callers.size && i == callers[ni].offset) {
+                out.add(FootnoteAtom(callers[ni].id))
+                ni++
+                continue
+            }
             if (mi < marks.size && i == marks[mi].start) {
                 val m = marks[mi]
                 out.add(NumberAtom(m.number, m.verseKey))
@@ -62,11 +76,17 @@ object ChapterPaginator {
                 continue
             }
             if (content[i] == ' ') { i++; continue }
-            val bound = if (mi < marks.size) marks[mi].start else content.length
+            val bound = minOf(
+                if (mi < marks.size) marks[mi].start else content.length,
+                if (ni < callers.size) callers[ni].offset else content.length,
+            )
             var j = i
             while (j < bound && content[j] != ' ') j++
-            if (j > i) out.add(WordAtom(content.substring(i, j)))
-            i = j
+            if (j > i) { out.add(WordAtom(content.substring(i, j))); i = j } else i++
+        }
+        // A caller anchored at the very end of the block's content.
+        while (ni < callers.size && callers[ni].offset >= content.length) {
+            out.add(FootnoteAtom(callers[ni].id)); ni++
         }
     }
 

@@ -84,8 +84,12 @@ headings). `ReaderTypography.build()` is the single source of truth mapping atom
 `SpannableStringBuilder` **and** the char `Mark`s that hit-testing/highlighting retrace — so
 selection survives the formatting. **Paragraph spans (alignment, `LeadingMarginSpan`) must be
 `EXCLUSIVE_EXCLUSIVE`**, or an inclusive end at the buffer tail grows into every later append.
-Still to wire: tappable footnote popups and tappable xref navigation (the `footnote`/`xref`
-tables). Rebuild the DB with `data/tools/build_bible_db.py` after editing `bsb_usfm/`.
+Footnotes are wired: `atomsForBlocks` splices a `FootnoteAtom` (superscript `*` caller) at each
+`footnote.offset`; a tap is hit-tested via `footnoteAtOffset` and shown by `FootnotePopup` (a
+hard-bordered, scrimless, immersive-preserving panel — kept full-screen + `FLAG_NOT_FOCUSABLE`
+so taps don't leak and the BOOX system bars stay hidden). Still to wire: tappable xref
+navigation (the `xref` table). Rebuild the DB with `data/tools/build_bible_db.py` after editing
+`bsb_usfm/`.
 
 ## Native Android (`apps/biblesprout_android/`)
 

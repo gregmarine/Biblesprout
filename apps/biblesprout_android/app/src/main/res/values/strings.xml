@@ -35,6 +35,7 @@
     <string name="notes">Notes</string>
     <string name="change">Change</string>
     <string name="commentary">Commentary</string>
+    <string name="footnote">Footnote</string>
     <!-- %1$s = commentary abbreviation, %2$s = reference (e.g. "MHCC · John 3") -->
     <string name="commentary_title">%1$s · %2$s</string>
 

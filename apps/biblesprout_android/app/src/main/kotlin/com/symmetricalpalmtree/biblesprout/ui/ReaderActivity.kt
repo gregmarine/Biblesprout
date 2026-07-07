@@ -25,6 +25,7 @@ import com.symmetricalpalmtree.biblesprout.model.ChapterRef
 import com.symmetricalpalmtree.biblesprout.reader.Atom
 import com.symmetricalpalmtree.biblesprout.reader.ChapterPaginator
 import com.symmetricalpalmtree.biblesprout.reader.CommentaryLauncher
+import com.symmetricalpalmtree.biblesprout.reader.FootnotePopup
 import com.symmetricalpalmtree.biblesprout.reader.NumberAtom
 import com.symmetricalpalmtree.biblesprout.reader.ReaderPage
 import com.symmetricalpalmtree.biblesprout.reader.ReaderTypography
@@ -68,6 +69,9 @@ class ReaderActivity : AppCompatActivity() {
     // the top-bar bookmark toggle.
     private var pageAnchors: List<Int> = emptyList()
     private var bookmarkedKeys: Set<Int> = emptySet()
+
+    // The current chapter's footnotes by id, for the tap-to-open caller popup.
+    private var chapterFootnotes: Map<Int, com.symmetricalpalmtree.biblesprout.data.Footnote> = emptyMap()
 
     // Highlights: the current chapter's saved highlights, the per-page word seed
     // (verse + word count carried into each page), and the in-progress selection.
@@ -542,6 +546,19 @@ class ReaderActivity : AppCompatActivity() {
         startActivity(NoteActivity.intent(this, lo, hi, "${book.name} ${ref.chapterNumber}"))
     }
 
+    /** The footnote whose caller was tapped at (x, y), if any. */
+    private fun footnoteAt(x: Float, y: Float): com.symmetricalpalmtree.biblesprout.data.Footnote? {
+        val body = currentBody ?: return null
+        if (pages.isEmpty()) return null
+        val localX = (x - binding.reader.horizontalPad).toInt()
+        val localY = (y - binding.reader.verticalPad - bodyTopPx).toInt()
+        if (localY < 0 || localY > body.height) return null
+        val line = body.getLineForVertical(localY)
+        val offset = body.getOffsetForHorizontal(line, localX.toFloat())
+        val id = typo.footnoteAtOffset(pages[page], offset) ?: return null
+        return chapterFootnotes[id]
+    }
+
     /** Opens commentary anchored to the verse under a long-press, if any. */
     private fun openVerseCommentary(x: Float, y: Float) {
         val body = currentBody ?: return
@@ -626,8 +643,12 @@ class ReaderActivity : AppCompatActivity() {
             val blocks = withContext(Dispatchers.IO) {
                 AppServices.bibleDb.blocksForChapter(usfm, chapter.number)
             }
+            val footnotes = withContext(Dispatchers.IO) {
+                AppServices.bibleDb.footnotesForChapter(usfm, chapter.number)
+            }
+            chapterFootnotes = footnotes.associateBy { it.id }
             val packed = withContext(Dispatchers.Default) {
-                val atoms = ChapterPaginator.atomsForBlocks(blocks)
+                val atoms = ChapterPaginator.atomsForBlocks(blocks, footnotes)
                 val headingHeight = typo.headingHeight(book.name, chapter.number, width)
                 ChapterPaginator.paginate(
                     atoms = atoms,
@@ -691,6 +712,11 @@ class ReaderActivity : AppCompatActivity() {
             override fun onSingleTapUp(e: MotionEvent): Boolean {
                 if (highlightMode) {
                     handleHighlightTap(e.x, e.y)
+                    return true
+                }
+                // A tap on a footnote caller opens its popup instead of turning the page.
+                footnoteAt(e.x, e.y)?.let {
+                    FootnotePopup.show(this@ReaderActivity, it.verseKey, it.text)
                     return true
                 }
                 val third = binding.reader.width / 3f

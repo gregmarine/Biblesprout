@@ -40,6 +40,19 @@ data class RenderBlock(
 )
 
 /**
+ * A footnote: its caller sits at [offset] chars into block [blockId]'s content;
+ * [text] is the popup body, [label] the origin reference (e.g. "1:6").
+ */
+data class Footnote(
+    val id: Int,
+    val blockId: Int,
+    val offset: Int,
+    val verseKey: Int?,
+    val label: String?,
+    val text: String,
+)
+
+/**
  * Read-only accessor for a Bible source database (`*.bible`). Opens the prebuilt
  * file plaintext through SQLCipher (its bundled SQLite has the FTS5 the reader's
  * search needs), rebuilds the in-memory [Bible] the reader consumes, and exposes
@@ -171,6 +184,34 @@ class BibleDatabase private constructor(
                         startKey = if (c.isNull(2)) null else c.getInt(2),
                         content = c.getString(3),
                         verses = markers[id]?.sortedBy { it.start } ?: emptyList(),
+                    ),
+                )
+            }
+        }
+        return out
+    }
+
+    /** The chapter's footnotes, each anchored to a block + caller offset. */
+    fun footnotesForChapter(usfm: String, chapter: Int): List<Footnote> {
+        val out = ArrayList<Footnote>()
+        db.rawQuery(
+            """
+            SELECT f.id, f.block_id, f.offset, f.verse_key, f.label, f.text
+            FROM footnote f JOIN block b ON b.id = f.block_id
+            WHERE b.usfm = ? AND b.chapter = ?
+            ORDER BY f.block_id, f.offset
+            """.trimIndent(),
+            arrayOf(usfm, chapter.toString()),
+        ).use { c ->
+            while (c.moveToNext()) {
+                out.add(
+                    Footnote(
+                        id = c.getInt(0),
+                        blockId = c.getInt(1),
+                        offset = c.getInt(2),
+                        verseKey = if (c.isNull(3)) null else c.getInt(3),
+                        label = if (c.isNull(4)) null else c.getString(4),
+                        text = c.getString(5),
                     ),
                 )
             }

@@ -149,6 +149,16 @@ class ReaderTypography(context: Context) {
                     marks.add(Mark(atom, start, sb.length))
                     atLineStart = false
                 }
+                is FootnoteAtom -> {
+                    // The caller attaches to the preceding word — no leading space.
+                    val start = sb.length
+                    sb.append(CALLER)
+                    sb.setSpan(RelativeSizeSpan(0.7f), start, sb.length, EXCL)
+                    sb.setSpan(StyleSpan(Typeface.BOLD), start, sb.length, EXCL)
+                    sb.setSpan(SuperscriptSpan(), start, sb.length, EXCL)
+                    marks.add(Mark(atom, start, sb.length))
+                    atLineStart = false
+                }
             }
         }
         closeLine()
@@ -215,6 +225,17 @@ class ReaderTypography(context: Context) {
             if (m.atom is NumberAtom) key = m.atom.verseKey
         }
         return key
+    }
+
+    /**
+     * The id of the footnote whose caller sits at character [offset], or null. A
+     * small char slop absorbs imprecise taps on the tiny superscript caller.
+     */
+    fun footnoteAtOffset(atoms: List<Atom>, offset: Int): Int? {
+        for (m in build(atoms).marks) {
+            if (m.atom is FootnoteAtom && offset in (m.start - 1)..m.end) return m.atom.id
+        }
+        return null
     }
 
     /**
@@ -290,6 +311,9 @@ class ReaderTypography(context: Context) {
 
     companion object {
         const val BLACK = 0xFF000000.toInt()
+
+        /** The footnote caller glyph rendered inline (superscript). */
+        private const val CALLER = "*"
         private const val EXCL = Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
         private const val INCL = Spanned.SPAN_INCLUSIVE_INCLUSIVE
     }

@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Empty band above the top toolbar, so its buttons sit clear of the very top
+         edge where a swipe would pull down the Android system status bar. -->
+    <dimen name="top_safe_gap">18dp</dimen>
+</resources>

@@ -65,8 +65,10 @@ class NoteActivity : AppCompatActivity() {
         endKey = intent.getIntExtra(EXTRA_END_KEY, 0)
         binding.title.text = getString(R.string.note_title, intent.getStringExtra(EXTRA_LABEL).orEmpty())
 
-        binding.canvas.topInsetPx = dp(56)
-        binding.canvas.bottomInsetPx = dp(48)
+        // Carve out the whole top band (gap + 56dp toolbar + 1dp rule); there is no
+        // bottom band, so writing runs to the bottom edge and no resting hand flips a page.
+        binding.canvas.topInsetPx = resources.getDimensionPixelSize(R.dimen.top_safe_gap) + dp(57)
+        binding.canvas.bottomInsetPx = 0
         binding.canvas.onStrokeAdded = { persistStroke(it) }
         binding.canvas.onStrokesErased = { eraseStrokes(it) }
 

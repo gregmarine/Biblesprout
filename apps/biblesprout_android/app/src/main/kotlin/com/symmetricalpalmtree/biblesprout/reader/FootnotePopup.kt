@@ -5,8 +5,6 @@ import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.ColorDrawable
 import android.graphics.drawable.GradientDrawable
-import android.graphics.drawable.InsetDrawable
-import android.graphics.drawable.LayerDrawable
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
@@ -14,7 +12,6 @@ import android.view.Window
 import android.view.WindowManager
 import android.widget.FrameLayout
 import android.widget.LinearLayout
-import android.widget.ScrollView
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
@@ -39,61 +36,57 @@ object FootnotePopup {
         val rule = ContextCompat.getColor(activity, R.color.eink_rule)
         fun dp(v: Int) = (v * activity.resources.displayMetrics.density).toInt()
 
-        val panel = LinearLayout(activity).apply {
-            orientation = LinearLayout.VERTICAL
-            // A 2px black border stands in for the missing scrim (no dim on e-ink).
-            background = GradientDrawable().apply {
-                setColor(white)
-                setStroke(dp(2), black)
-                cornerRadius = dp(4).toFloat()
-            }
-        }
-
         val heading = verseKey?.let {
             val book = Canon.byOrdinal(VerseKey.ordinalOf(it))
             "${book.name} ${VerseKey.chapterOf(it)}:${VerseKey.verseOf(it)}"
         } ?: activity.getString(R.string.footnote)
 
-        panel.addView(
-            TextView(activity).apply {
-                this.text = heading
-                textSize = 18f
-                setTypeface(typeface, Typeface.BOLD)
-                setTextColor(black)
-                setPadding(dp(20), dp(16), dp(20), dp(12))
-            },
-        )
-        val body = TextView(activity).apply {
-            this.text = text
-            textSize = 18f
-            setTextColor(black)
-            setLineSpacing(0f, 1.25f)
-            setPadding(dp(20), dp(14), dp(20), dp(18))
-            // Hairline top rule between heading and body.
-            background = LayerDrawable(
-                arrayOf(ColorDrawable(rule), InsetDrawable(ColorDrawable(white), 0, dp(1), 0, 0)),
+        // Heading + body stacked in a hard-bordered panel; a heavy black border
+        // stands in for the missing scrim (no dim on e-ink). Children carry no
+        // background of their own — one would paint over the panel's border stroke.
+        val panel = LinearLayout(activity).apply {
+            orientation = LinearLayout.VERTICAL
+            background = GradientDrawable().apply {
+                setColor(white)
+                setStroke(dp(3), black)
+                cornerRadius = dp(6).toFloat()
+            }
+            addView(
+                TextView(activity).apply {
+                    this.text = heading
+                    textSize = 18f
+                    setTypeface(typeface, Typeface.BOLD)
+                    setTextColor(black)
+                    setPadding(dp(20), dp(16), dp(20), dp(12))
+                },
+            )
+            // Hairline divider, inset from the border so it never touches the stroke.
+            addView(
+                View(activity).apply {
+                    setBackgroundColor(rule)
+                    layoutParams = LinearLayout.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT,
+                        maxOf(1, dp(1)),
+                    ).apply { marginStart = dp(12); marginEnd = dp(12) }
+                },
+            )
+            addView(
+                TextView(activity).apply {
+                    this.text = text
+                    textSize = 18f
+                    setTextColor(black)
+                    setLineSpacing(0f, 1.25f)
+                    setPadding(dp(20), dp(14), dp(20), dp(18))
+                },
             )
         }
-        val scroll = ScrollView(activity).apply {
-            addView(body)
-            isVerticalScrollBarEnabled = false
-        }
-        panel.addView(scroll, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
 
         // Full-screen transparent catcher: any tap dismisses, nothing leaks through.
         val root = FrameLayout(activity)
-        val width = dp(340)
-        val maxH = (activity.resources.displayMetrics.heightPixels * 0.7f).toInt()
-        panel.measure(
-            View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY),
-            View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED),
-        )
         root.addView(
             panel,
-            FrameLayout.LayoutParams(
-                width,
-                if (panel.measuredHeight > maxH) maxH else ViewGroup.LayoutParams.WRAP_CONTENT,
-            ).apply { gravity = Gravity.CENTER },
+            FrameLayout.LayoutParams(dp(340), ViewGroup.LayoutParams.WRAP_CONTENT)
+                .apply { gravity = Gravity.CENTER },
         )
 
         val dialog = Dialog(activity).apply {

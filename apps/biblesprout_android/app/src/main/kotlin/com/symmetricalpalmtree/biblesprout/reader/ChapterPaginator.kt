@@ -3,6 +3,7 @@ package com.symmetricalpalmtree.biblesprout.reader
 import com.symmetricalpalmtree.biblesprout.data.Footnote
 import com.symmetricalpalmtree.biblesprout.data.RenderBlock
 import com.symmetricalpalmtree.biblesprout.data.VerseKey
+import com.symmetricalpalmtree.biblesprout.data.Xref
 import com.symmetricalpalmtree.biblesprout.model.Chapter
 
 /**
@@ -30,11 +31,16 @@ object ChapterPaginator {
      * [HeadingAtom], then its verse numbers and words. Verse-number spans in a
      * block's content are lifted out as [NumberAtom]s; the rest tokenizes to words.
      */
-    fun atomsForBlocks(blocks: List<RenderBlock>, footnotes: List<Footnote>): List<Atom> {
+    fun atomsForBlocks(
+        blocks: List<RenderBlock>,
+        footnotes: List<Footnote>,
+        xrefs: List<Xref> = emptyList(),
+    ): List<Atom> {
         val notesByBlock = footnotes.groupBy { it.blockId }
+        val blockXrefs = xrefs.filter { it.sourceKind == "block" }.groupBy { it.sourceId }
         val atoms = ArrayList<Atom>()
         for (block in blocks) {
-            val heading = headingFor(block)
+            val heading = headingFor(block, blockXrefs[block.id].orEmpty())
             if (heading != null) {
                 atoms.add(heading)
                 continue
@@ -99,10 +105,14 @@ object ChapterPaginator {
         else -> Flow.PARAGRAPH // p, pmo, pc, pm, mi, nb, …
     }
 
-    private fun headingFor(block: RenderBlock): HeadingAtom? = when (block.kind) {
-        "s1", "ms", "ms1" -> HeadingAtom(block.content, minor = false)
-        "s2", "s3", "mr", "r", "d", "qa", "sr", "sp" -> HeadingAtom(block.content, minor = true)
-        else -> null
+    private fun headingFor(block: RenderBlock, xrefs: List<Xref>): HeadingAtom? {
+        val links = xrefs.map { XrefLink(it.start, it.end, it.targetKey) }
+        return when (block.kind) {
+            "s1", "ms", "ms1" -> HeadingAtom(block.content, minor = false, links = links)
+            "s2", "s3", "mr", "r", "d", "qa", "sr", "sp" ->
+                HeadingAtom(block.content, minor = true, links = links)
+            else -> null
+        }
     }
 
     /**

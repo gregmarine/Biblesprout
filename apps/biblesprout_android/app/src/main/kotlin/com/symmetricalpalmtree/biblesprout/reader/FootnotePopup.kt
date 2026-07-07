@@ -5,6 +5,10 @@ import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.ColorDrawable
 import android.graphics.drawable.GradientDrawable
+import android.text.SpannableString
+import android.text.Spanned
+import android.text.method.LinkMovementMethod
+import android.text.style.ClickableSpan
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
@@ -30,7 +34,16 @@ import com.symmetricalpalmtree.biblesprout.data.VerseKey
  */
 object FootnotePopup {
 
-    fun show(activity: AppCompatActivity, verseKey: Int?, text: String) {
+    /** A tappable reference span in the footnote body: [start] until [end] chars → [targetKey]. */
+    data class Link(val start: Int, val end: Int, val targetKey: Int)
+
+    fun show(
+        activity: AppCompatActivity,
+        verseKey: Int?,
+        text: String,
+        links: List<Link> = emptyList(),
+        onNavigate: ((Int) -> Unit)? = null,
+    ) {
         val black = ContextCompat.getColor(activity, R.color.eink_black)
         val white = ContextCompat.getColor(activity, R.color.eink_white)
         val rule = ContextCompat.getColor(activity, R.color.eink_rule)
@@ -40,6 +53,34 @@ object FootnotePopup {
             val book = Canon.byOrdinal(VerseKey.ordinalOf(it))
             "${book.name} ${VerseKey.chapterOf(it)}:${VerseKey.verseOf(it)}"
         } ?: activity.getString(R.string.footnote)
+
+        // Assigned below; a cross-reference tap navigates then dismisses this popup.
+        var dialog: Dialog? = null
+        val body: CharSequence = if (links.isEmpty()) {
+            text
+        } else {
+            SpannableString(text).apply {
+                for (link in links) {
+                    val s = link.start.coerceIn(0, length)
+                    val e = link.end.coerceIn(s, length)
+                    if (e <= s) continue
+                    setSpan(
+                        object : ClickableSpan() {
+                            override fun onClick(widget: View) {
+                                onNavigate?.invoke(link.targetKey)
+                                dialog?.dismiss()
+                            }
+                            // Keep e-ink black with a plain underline — no accent-blue link tint.
+                            override fun updateDrawState(ds: android.text.TextPaint) {
+                                ds.color = black
+                                ds.isUnderlineText = true
+                            }
+                        },
+                        s, e, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE,
+                    )
+                }
+            }
+        }
 
         // Heading + body stacked in a hard-bordered panel; a heavy black border
         // stands in for the missing scrim (no dim on e-ink). Children carry no
@@ -72,11 +113,12 @@ object FootnotePopup {
             )
             addView(
                 TextView(activity).apply {
-                    this.text = text
+                    this.text = body
                     textSize = 18f
                     setTextColor(black)
                     setLineSpacing(0f, 1.25f)
                     setPadding(dp(20), dp(14), dp(20), dp(18))
+                    if (links.isNotEmpty()) movementMethod = LinkMovementMethod.getInstance()
                 },
             )
         }
@@ -89,7 +131,7 @@ object FootnotePopup {
                 .apply { gravity = Gravity.CENTER },
         )
 
-        val dialog = Dialog(activity).apply {
+        dialog = Dialog(activity).apply {
             requestWindowFeature(Window.FEATURE_NO_TITLE)
             setContentView(
                 root,
@@ -109,9 +151,10 @@ object FootnotePopup {
             // the full-screen root still receives taps because they land inside it.
             window?.addFlags(WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE)
         }
-        root.setOnClickListener { dialog.dismiss() }
-        dialog.show()
-        dialog.window?.let { w ->
+        val d = dialog!!
+        root.setOnClickListener { d.dismiss() }
+        d.show()
+        d.window?.let { w ->
             WindowInsetsControllerCompat(w, w.decorView).hide(WindowInsetsCompat.Type.systemBars())
         }
     }

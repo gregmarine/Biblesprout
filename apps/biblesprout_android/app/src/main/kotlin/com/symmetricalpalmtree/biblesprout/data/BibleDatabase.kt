@@ -53,6 +53,21 @@ data class Footnote(
 )
 
 /**
+ * A tappable cross-reference span. [sourceKind] is `"block"` (the span sits in a
+ * `\r` parallel-passage heading's content) or `"note"` (it sits in a footnote's
+ * body text); [sourceId] is the block id or footnote id accordingly. [start]/[end]
+ * are char offsets into that source's text, and [targetKey] is the verse key to
+ * navigate to when tapped.
+ */
+data class Xref(
+    val sourceKind: String,
+    val sourceId: Int,
+    val start: Int,
+    val end: Int,
+    val targetKey: Int,
+)
+
+/**
  * Read-only accessor for a Bible source database (`*.bible`). Opens the prebuilt
  * file plaintext through SQLCipher (its bundled SQLite has the FTS5 the reader's
  * search needs), rebuilds the in-memory [Bible] the reader consumes, and exposes
@@ -212,6 +227,42 @@ class BibleDatabase private constructor(
                         verseKey = if (c.isNull(3)) null else c.getInt(3),
                         label = if (c.isNull(4)) null else c.getString(4),
                         text = c.getString(5),
+                    ),
+                )
+            }
+        }
+        return out
+    }
+
+    /**
+     * The chapter's cross-references — both those in `\r` parallel-passage headings
+     * (`source_kind='block'`) and those inside footnote bodies (`source_kind='note'`),
+     * each carrying the char span and the verse key it points to.
+     */
+    fun xrefsForChapter(usfm: String, chapter: Int): List<Xref> {
+        val out = ArrayList<Xref>()
+        db.rawQuery(
+            """
+            SELECT x.source_kind, x.source_id, x.start, x.end, x.target_start_key
+            FROM xref x JOIN block b ON b.id = x.source_id
+            WHERE x.source_kind = 'block' AND b.usfm = ? AND b.chapter = ?
+            UNION ALL
+            SELECT x.source_kind, x.source_id, x.start, x.end, x.target_start_key
+            FROM xref x
+              JOIN footnote f ON f.id = x.source_id
+              JOIN block b ON b.id = f.block_id
+            WHERE x.source_kind = 'note' AND b.usfm = ? AND b.chapter = ?
+            """.trimIndent(),
+            arrayOf(usfm, chapter.toString(), usfm, chapter.toString()),
+        ).use { c ->
+            while (c.moveToNext()) {
+                out.add(
+                    Xref(
+                        sourceKind = c.getString(0),
+                        sourceId = c.getInt(1),
+                        start = c.getInt(2),
+                        end = c.getInt(3),
+                        targetKey = c.getInt(4),
                     ),
                 )
             }

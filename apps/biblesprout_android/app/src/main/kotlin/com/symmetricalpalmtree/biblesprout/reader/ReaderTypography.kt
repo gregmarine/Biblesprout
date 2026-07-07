@@ -13,6 +13,7 @@ import android.text.style.LineHeightSpan
 import android.text.style.RelativeSizeSpan
 import android.text.style.StyleSpan
 import android.text.style.SuperscriptSpan
+import android.text.style.UnderlineSpan
 import android.util.TypedValue
 import androidx.core.content.res.ResourcesCompat
 import com.symmetricalpalmtree.biblesprout.R
@@ -79,7 +80,15 @@ class ReaderTypography(context: Context) {
 
     /** The char span an atom's own glyphs occupy in a built layout. */
     private data class Mark(val atom: Atom, val start: Int, val end: Int)
-    private class Built(val text: SpannableStringBuilder, val marks: List<Mark>)
+
+    /** The char span a cross-reference link occupies, and the verse key it targets. */
+    private data class XrefMark(val start: Int, val end: Int, val targetKey: Int)
+
+    private class Built(
+        val text: SpannableStringBuilder,
+        val marks: List<Mark>,
+        val xrefs: List<XrefMark>,
+    )
 
     /**
      * The single source of truth for how an atom stream lays out: builds the
@@ -91,6 +100,7 @@ class ReaderTypography(context: Context) {
     private fun build(atoms: List<Atom>): Built {
         val sb = SpannableStringBuilder()
         val marks = ArrayList<Mark>()
+        val xrefs = ArrayList<XrefMark>()
         var atLineStart = true
         var lineStart = 0
         var lineFlow = Flow.PARAGRAPH
@@ -127,6 +137,16 @@ class ReaderTypography(context: Context) {
                     // bleeding the center alignment onto the whole page.
                     sb.setSpan(AlignmentSpan.Standard(Layout.Alignment.ALIGN_CENTER), start, sb.length, EXCL)
                     sb.setSpan(StyleSpan(if (atom.minor) Typeface.ITALIC else Typeface.BOLD), start, sb.length, EXCL)
+                    // Tappable cross-reference spans within a parallel-passage heading:
+                    // underline them so they read as links, and record their char span.
+                    for (link in atom.links) {
+                        val ls = (start + link.start).coerceIn(start, sb.length)
+                        val le = (start + link.end).coerceIn(ls, sb.length)
+                        if (le > ls) {
+                            sb.setSpan(UnderlineSpan(), ls, le, EXCL)
+                            xrefs.add(XrefMark(ls, le, link.targetKey))
+                        }
+                    }
                     sb.append('\n') // end the heading line; next line starts a gap-free body line
                     lineStart = sb.length
                     lineFlow = Flow.PARAGRAPH
@@ -163,7 +183,7 @@ class ReaderTypography(context: Context) {
         }
         closeLine()
         if (sb.isNotEmpty()) sb.setSpan(LineHeightSpan.Standard(lineHeightPx), 0, sb.length, INCL)
-        return Built(sb, marks)
+        return Built(sb, marks, xrefs)
     }
 
     /** Applies a line's leading margin (poetry indent / paragraph first-line indent). */
@@ -234,6 +254,18 @@ class ReaderTypography(context: Context) {
     fun footnoteAtOffset(atoms: List<Atom>, offset: Int): Int? {
         for (m in build(atoms).marks) {
             if (m.atom is FootnoteAtom && offset in (m.start - 1)..m.end) return m.atom.id
+        }
+        return null
+    }
+
+    /**
+     * The verse key of the cross-reference link covering character [offset] (a
+     * tapped `\r` parallel-passage reference), or null if none. Uses the exact char
+     * spans [build] underlined, so a tap on the drawn link resolves its target.
+     */
+    fun xrefAtOffset(atoms: List<Atom>, offset: Int): Int? {
+        for (x in build(atoms).xrefs) {
+            if (offset in x.start until x.end) return x.targetKey
         }
         return null
     }

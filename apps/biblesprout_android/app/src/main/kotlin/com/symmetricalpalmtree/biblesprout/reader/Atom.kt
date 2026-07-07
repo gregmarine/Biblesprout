@@ -26,8 +26,22 @@ enum class Flow { PARAGRAPH, POETRY1, POETRY2, POETRY_REFRAIN, LIST1, LIST2, STA
 /** Forces a new line in the flow, styled by [flow] (poetry indent, paragraph…). */
 data class BreakAtom(val flow: Flow) : Atom
 
-/** A centered section heading rendered inline in the flow (e.g. "The Creation"). */
-data class HeadingAtom(val text: String, val minor: Boolean) : Atom
+/**
+ * A tappable cross-reference span inside a [HeadingAtom]'s text: [start] until [end]
+ * are char offsets into the heading text, [targetKey] is the verse it navigates to.
+ */
+data class XrefLink(val start: Int, val end: Int, val targetKey: Int)
+
+/**
+ * A centered section heading rendered inline in the flow (e.g. "The Creation"). A
+ * `\r` parallel-passage line carries [links] — the tappable reference spans within
+ * its text (e.g. "John 1:1–5" in "(John 1:1–5; Hebrews 11:1–3)").
+ */
+data class HeadingAtom(
+    val text: String,
+    val minor: Boolean,
+    val links: List<XrefLink> = emptyList(),
+) : Atom
 
 /** A tappable footnote caller anchored between words; [id] resolves the popup body. */
 data class FootnoteAtom(val id: Int) : Atom

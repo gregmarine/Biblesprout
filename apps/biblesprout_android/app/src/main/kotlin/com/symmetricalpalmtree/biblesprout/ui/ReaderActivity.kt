@@ -73,6 +73,10 @@ class ReaderActivity : AppCompatActivity() {
     // The current chapter's footnotes by id, for the tap-to-open caller popup.
     private var chapterFootnotes: Map<Int, com.symmetricalpalmtree.biblesprout.data.Footnote> = emptyMap()
 
+    // The current chapter's footnote-body cross-references, grouped by footnote id, so
+    // a reference cited in a footnote is tappable in its popup.
+    private var noteXrefs: Map<Int, List<com.symmetricalpalmtree.biblesprout.data.Xref>> = emptyMap()
+
     // Highlights: the current chapter's saved highlights, the per-page word seed
     // (verse + word count carried into each page), and the in-progress selection.
     private var pageSeeds: List<WordRef> = emptyList()
@@ -559,6 +563,29 @@ class ReaderActivity : AppCompatActivity() {
         return chapterFootnotes[id]
     }
 
+    /** The cross-reference target verse key tapped at (x, y), if any. */
+    private fun xrefAt(x: Float, y: Float): Int? {
+        val body = currentBody ?: return null
+        if (pages.isEmpty()) return null
+        val localX = (x - binding.reader.horizontalPad).toInt()
+        val localY = (y - binding.reader.verticalPad - bodyTopPx).toInt()
+        if (localY < 0 || localY > body.height) return null
+        val line = body.getLineForVertical(localY)
+        val offset = body.getOffsetForHorizontal(line, localX.toFloat())
+        return typo.xrefAtOffset(pages[page], offset)
+    }
+
+    /** Opens the reader at the chapter/verse a cross-reference points to. */
+    private fun navigateToVerse(verseKey: Int) {
+        val ordinal = VerseKey.ordinalOf(verseKey)
+        startActivity(
+            Intent(this, ReaderActivity::class.java)
+                .putExtra(EXTRA_BOOK_INDEX, ordinal - 1)
+                .putExtra(EXTRA_CHAPTER, VerseKey.chapterOf(verseKey))
+                .putExtra(EXTRA_START_VERSE, VerseKey.verseOf(verseKey)),
+        )
+    }
+
     /** Opens commentary anchored to the verse under a long-press, if any. */
     private fun openVerseCommentary(x: Float, y: Float) {
         val body = currentBody ?: return
@@ -646,9 +673,13 @@ class ReaderActivity : AppCompatActivity() {
             val footnotes = withContext(Dispatchers.IO) {
                 AppServices.bibleDb.footnotesForChapter(usfm, chapter.number)
             }
+            val xrefs = withContext(Dispatchers.IO) {
+                AppServices.bibleDb.xrefsForChapter(usfm, chapter.number)
+            }
             chapterFootnotes = footnotes.associateBy { it.id }
+            noteXrefs = xrefs.filter { it.sourceKind == "note" }.groupBy { it.sourceId }
             val packed = withContext(Dispatchers.Default) {
-                val atoms = ChapterPaginator.atomsForBlocks(blocks, footnotes)
+                val atoms = ChapterPaginator.atomsForBlocks(blocks, footnotes, xrefs)
                 val headingHeight = typo.headingHeight(book.name, chapter.number, width)
                 ChapterPaginator.paginate(
                     atoms = atoms,
@@ -714,9 +745,19 @@ class ReaderActivity : AppCompatActivity() {
                     handleHighlightTap(e.x, e.y)
                     return true
                 }
+                // A tap on a cross-reference (a \r parallel-passage link) navigates
+                // instead of turning the page.
+                xrefAt(e.x, e.y)?.let {
+                    navigateToVerse(it)
+                    return true
+                }
                 // A tap on a footnote caller opens its popup instead of turning the page.
-                footnoteAt(e.x, e.y)?.let {
-                    FootnotePopup.show(this@ReaderActivity, it.verseKey, it.text)
+                footnoteAt(e.x, e.y)?.let { note ->
+                    val links = noteXrefs[note.id].orEmpty()
+                        .map { FootnotePopup.Link(it.start, it.end, it.targetKey) }
+                    FootnotePopup.show(this@ReaderActivity, note.verseKey, note.text, links) { key ->
+                        navigateToVerse(key)
+                    }
                     return true
                 }
                 val third = binding.reader.width / 3f

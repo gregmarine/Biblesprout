@@ -87,9 +87,13 @@ selection survives the formatting. **Paragraph spans (alignment, `LeadingMarginS
 Footnotes are wired: `atomsForBlocks` splices a `FootnoteAtom` (superscript `*` caller) at each
 `footnote.offset`; a tap is hit-tested via `footnoteAtOffset` and shown by `FootnotePopup` (a
 hard-bordered, scrimless, immersive-preserving panel — kept full-screen + `FLAG_NOT_FOCUSABLE`
-so taps don't leak and the BOOX system bars stay hidden). Still to wire: tappable xref
-navigation (the `xref` table). Rebuild the DB with `data/tools/build_bible_db.py` after editing
-`bsb_usfm/`.
+so taps don't leak and the BOOX system bars stay hidden). Cross-references are wired too
+(`xrefsForChapter()`): `source_kind='block'` spans (in `\r` parallel-passage headings) become
+underlined links carried on `HeadingAtom.links`, marked by `build()` and hit-tested via
+`xrefAtOffset` → `navigateToVerse`; `source_kind='note'` spans (citations inside a footnote
+body) render as underlined `ClickableSpan`s in `FootnotePopup` that navigate on tap. Both open
+the reader at the target verse via `EXTRA_START_VERSE`. Rebuild the DB with
+`data/tools/build_bible_db.py` after editing `bsb_usfm/`.
 
 ## Native Android (`apps/biblesprout_android/`)
 

@@ -18,8 +18,17 @@ is built alongside it.
   project — don't target it.
 - `data/` — shared, canonical scripture and commentary content, consumed by the native app
   and the build tooling:
-  - `data/bible/bsb.txt` — human-editable source of truth (public domain, bereanbible.com).
-  - `data/bible/bsb.bible` — built read-only SQLite Bible DB.
+  - `data/bible/bsb_usfm/` — **source of truth**: the 66 official BSB USFM files (public
+    domain, bereanbible.com `bsb_usfm.zip`, 3rd printing). Carries print formatting (poetry
+    indent, paragraphs, headings), footnotes, cross-references and red-letter markup. To
+    refresh, re-download the zip and unzip over this dir, then rebuild.
+  - `data/bible/bsb.txt` — the older plain-text edition, kept only as a parity reference.
+  - `data/bible/bsb.bible` — built read-only SQLite Bible DB (see the schema note below).
+  - `data/tools/build_bible_db.py` — standalone builder: `bsb_usfm/` → `bsb.bible`
+    (`python3 data/tools/build_bible_db.py`; needs an FTS5-capable sqlite3 — stock macOS has
+    it). Strips two known artifacts in the USFM export (`vvv`, `[’’]`) and normalizes a few
+    source spacing typos; ~99.6% verse-text parity with `bsb.txt`, the rest being intentional
+    3rd-printing edits (bracketed supplied words, `. . .` ellipses, spaced en-dashes).
   - `data/commentaries/*.xml` — CCEL ThML sources for Matthew Henry Concise (`mhcc`) and
     the six-volume Complete (`mhc1`…`mhc6`).
   - `data/commentaries/{mhcc,mhc}.commentary` — built read-only SQLite commentary DBs.
@@ -43,6 +52,34 @@ engine must bundle it (the Android system SQLite often lacks FTS5).
 
 The built `.bible`/`.commentary` DBs in `data/` are the same artifacts the Flutter app
 bundles; the native app can consume them directly rather than rebuilding from source.
+
+### `.bible` schema (v2 — rich display layer)
+
+`bsb.bible` keeps the original **plain layer** verbatim so existing consumers are unaffected:
+`metadata`, `book`, `verse` (`verse_key`, `usfm`, `chapter`, `verse`, `text` — clean,
+markup-free), and `verse_fts` (FTS5 external-content over `verse.text`). Search runs on the
+clean text, so it never trips on formatting, footnote text or reference labels.
+
+Alongside it a **display layer** encodes print formatting and interactivity, addressed by
+**character offsets into block text** (the Kotlin reader turns these straight into
+`StaticLayout` spans; offsets are code-point indices == UTF-16 since the text is all BMP):
+- `block` — the chapter's render stream in document order (`id` == reading order): one row
+  per paragraph / poetry line / heading / stanza break. `kind` is the USFM marker (`p`,
+  `pmo`, `q1`, `q2`, `b`, `s1`, `d`, `r`, `li1`, …); `content` is the display text (verse
+  numbers inlined, footnote callers not); `start_key` is the first verse whose text appears.
+- `verse_marker` (block_id, start, end, verse_key, number) — the superscript verse-number
+  span within a block.
+- `redletter` (block_id, start, end) — words-of-Jesus (`\wj`) spans (monochrome on e-ink, so
+  a style choice, not color).
+- `footnote` (id, block_id, offset, verse_key, label, text) — caller insertion point in a
+  block + the popup body (clean text). **Tap → popup.**
+- `xref` (source_kind `block|note`, source_id, start, end, target_start_key, target_end_key)
+  — a cross-reference link span (in a block, or inside a footnote body) with its resolved
+  target verse-key range. **Tap → navigate.**
+
+The reader still renders from the plain `verse` layer today; wiring the `block`-based
+renderer (poetry layout, tappable footnote popups, tappable xref navigation) is the next
+native phase. Rebuild the DB with `data/tools/build_bible_db.py` after editing `bsb_usfm/`.
 
 ## Native Android (`apps/biblesprout_android/`)
 

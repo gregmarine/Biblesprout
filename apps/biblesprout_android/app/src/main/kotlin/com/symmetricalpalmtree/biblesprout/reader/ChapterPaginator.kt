@@ -1,5 +1,6 @@
 package com.symmetricalpalmtree.biblesprout.reader
 
+import com.symmetricalpalmtree.biblesprout.data.RenderBlock
 import com.symmetricalpalmtree.biblesprout.data.VerseKey
 import com.symmetricalpalmtree.biblesprout.model.Chapter
 
@@ -20,6 +21,68 @@ object ChapterPaginator {
             }
         }
         return atoms
+    }
+
+    /**
+     * Flattens the rich block layer into an atom stream carrying print structure:
+     * each block contributes a leading [BreakAtom] (poetry/paragraph/stanza) or a
+     * [HeadingAtom], then its verse numbers and words. Verse-number spans in a
+     * block's content are lifted out as [NumberAtom]s; the rest tokenizes to words.
+     */
+    fun atomsForBlocks(blocks: List<RenderBlock>): List<Atom> {
+        val atoms = ArrayList<Atom>()
+        for (block in blocks) {
+            val heading = headingFor(block)
+            if (heading != null) {
+                atoms.add(heading)
+                continue
+            }
+            if (block.kind == "b") {
+                atoms.add(BreakAtom(Flow.STANZA))
+                continue
+            }
+            atoms.add(BreakAtom(flowFor(block.kind)))
+            tokenize(block, atoms)
+        }
+        return atoms
+    }
+
+    /** Emits the block's content as NumberAtoms (at verse-marker spans) + WordAtoms. */
+    private fun tokenize(block: RenderBlock, out: ArrayList<Atom>) {
+        val content = block.content
+        val marks = block.verses // sorted by start
+        var i = 0
+        var mi = 0
+        while (i < content.length) {
+            if (mi < marks.size && i == marks[mi].start) {
+                val m = marks[mi]
+                out.add(NumberAtom(m.number, m.verseKey))
+                i = m.end
+                mi++
+                continue
+            }
+            if (content[i] == ' ') { i++; continue }
+            val bound = if (mi < marks.size) marks[mi].start else content.length
+            var j = i
+            while (j < bound && content[j] != ' ') j++
+            if (j > i) out.add(WordAtom(content.substring(i, j)))
+            i = j
+        }
+    }
+
+    private fun flowFor(kind: String): Flow = when (kind) {
+        "q1" -> Flow.POETRY1
+        "q2", "q3" -> Flow.POETRY2
+        "qr" -> Flow.POETRY_REFRAIN
+        "li1" -> Flow.LIST1
+        "li2" -> Flow.LIST2
+        else -> Flow.PARAGRAPH // p, pmo, pc, pm, mi, nb, …
+    }
+
+    private fun headingFor(block: RenderBlock): HeadingAtom? = when (block.kind) {
+        "s1", "ms", "ms1" -> HeadingAtom(block.content, minor = false)
+        "s2", "s3", "mr", "r", "d", "qa", "sr", "sp" -> HeadingAtom(block.content, minor = true)
+        else -> null
     }
 
     /**

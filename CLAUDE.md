@@ -77,9 +77,15 @@ Alongside it a **display layer** encodes print formatting and interactivity, add
   — a cross-reference link span (in a block, or inside a footnote body) with its resolved
   target verse-key range. **Tap → navigate.**
 
-The reader still renders from the plain `verse` layer today; wiring the `block`-based
-renderer (poetry layout, tappable footnote popups, tappable xref navigation) is the next
-native phase. Rebuild the DB with `data/tools/build_bible_db.py` after editing `bsb_usfm/`.
+The reader renders from the `block` layer: `BibleDatabase.blocksForChapter()` →
+`ChapterPaginator.atomsForBlocks()` produces the atom stream, with `BreakAtom`/`HeadingAtom`
+carrying print structure (poetry indent, paragraph breaks, stanza breaks, centered section
+headings). `ReaderTypography.build()` is the single source of truth mapping atoms → the drawn
+`SpannableStringBuilder` **and** the char `Mark`s that hit-testing/highlighting retrace — so
+selection survives the formatting. **Paragraph spans (alignment, `LeadingMarginSpan`) must be
+`EXCLUSIVE_EXCLUSIVE`**, or an inclusive end at the buffer tail grows into every later append.
+Still to wire: tappable footnote popups and tappable xref navigation (the `footnote`/`xref`
+tables). Rebuild the DB with `data/tools/build_bible_db.py` after editing `bsb_usfm/`.
 
 ## Native Android (`apps/biblesprout_android/`)
 

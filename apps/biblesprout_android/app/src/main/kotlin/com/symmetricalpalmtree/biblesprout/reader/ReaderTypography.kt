@@ -7,6 +7,8 @@ import android.text.SpannableStringBuilder
 import android.text.Spanned
 import android.text.StaticLayout
 import android.text.TextPaint
+import android.text.style.AlignmentSpan
+import android.text.style.LeadingMarginSpan
 import android.text.style.LineHeightSpan
 import android.text.style.RelativeSizeSpan
 import android.text.style.StyleSpan
@@ -71,26 +73,103 @@ class ReaderTypography(context: Context) {
         letterSpacing = 0.037f
     }
 
-    /** The rendered/measured spans for a run of atoms (identical for both uses). */
-    private fun spannable(atoms: List<Atom>): SpannableStringBuilder {
+    // Poetry / list indent unit, and the prose paragraph first-line indent.
+    private val indentUnit = dp(22f)
+    private val paraIndent = dp(18f)
+
+    /** The char span an atom's own glyphs occupy in a built layout. */
+    private data class Mark(val atom: Atom, val start: Int, val end: Int)
+    private class Built(val text: SpannableStringBuilder, val marks: List<Mark>)
+
+    /**
+     * The single source of truth for how an atom stream lays out: builds the
+     * rendered [SpannableStringBuilder] and, in lockstep, the char span of every
+     * word/number ([Mark]s) so hit-testing and highlighting retrace exactly what
+     * was drawn. [BreakAtom]s start new lines (poetry indent / paragraph / stanza);
+     * [HeadingAtom]s render as centered lines.
+     */
+    private fun build(atoms: List<Atom>): Built {
         val sb = SpannableStringBuilder()
-        atoms.forEachIndexed { i, atom ->
+        val marks = ArrayList<Mark>()
+        var atLineStart = true
+        var lineStart = 0
+        var lineFlow = Flow.PARAGRAPH
+
+        fun closeLine() {
+            if (sb.length > lineStart) applyFlow(sb, lineStart, sb.length, lineFlow)
+        }
+        fun newline() {
+            if (!atLineStart) {
+                closeLine()
+                sb.append('\n')
+                atLineStart = true
+                lineStart = sb.length
+            }
+        }
+
+        for (atom in atoms) {
             when (atom) {
+                is BreakAtom -> {
+                    newline()
+                    if (atom.flow == Flow.STANZA && sb.isNotEmpty()) {
+                        sb.append('\n') // a blank separator line between stanzas
+                        lineStart = sb.length
+                    }
+                    lineFlow = atom.flow
+                }
+                is HeadingAtom -> {
+                    newline()
+                    if (sb.isNotEmpty()) { sb.append('\n'); lineStart = sb.length } // gap above
+                    val start = sb.length
+                    sb.append(atom.text)
+                    // Paragraph spans must be EXCLUSIVE at the end: an INCLUSIVE end
+                    // sits at the buffer tail and would grow into every later append,
+                    // bleeding the center alignment onto the whole page.
+                    sb.setSpan(AlignmentSpan.Standard(Layout.Alignment.ALIGN_CENTER), start, sb.length, EXCL)
+                    sb.setSpan(StyleSpan(if (atom.minor) Typeface.ITALIC else Typeface.BOLD), start, sb.length, EXCL)
+                    sb.append('\n') // end the heading line; next line starts a gap-free body line
+                    lineStart = sb.length
+                    lineFlow = Flow.PARAGRAPH
+                    atLineStart = true
+                }
                 is NumberAtom -> {
-                    if (i > 0) sb.append(' ')
+                    if (!atLineStart) sb.append(' ')
                     val start = sb.length
                     sb.append(atom.number.toString())
                     sb.setSpan(RelativeSizeSpan(0.62f), start, sb.length, EXCL)
                     sb.setSpan(StyleSpan(Typeface.BOLD), start, sb.length, EXCL)
                     sb.setSpan(SuperscriptSpan(), start, sb.length, EXCL)
+                    marks.add(Mark(atom, start, sb.length))
+                    atLineStart = false
                 }
-                is WordAtom -> sb.append(if (i > 0) " ${atom.word}" else atom.word)
+                is WordAtom -> {
+                    if (!atLineStart) sb.append(' ')
+                    val start = sb.length
+                    sb.append(atom.word)
+                    marks.add(Mark(atom, start, sb.length))
+                    atLineStart = false
+                }
             }
         }
-        if (sb.isNotEmpty()) {
-            sb.setSpan(LineHeightSpan.Standard(lineHeightPx), 0, sb.length, INCL)
+        closeLine()
+        if (sb.isNotEmpty()) sb.setSpan(LineHeightSpan.Standard(lineHeightPx), 0, sb.length, INCL)
+        return Built(sb, marks)
+    }
+
+    /** Applies a line's leading margin (poetry indent / paragraph first-line indent). */
+    private fun applyFlow(sb: SpannableStringBuilder, start: Int, end: Int, flow: Flow) {
+        val span = when (flow) {
+            Flow.PARAGRAPH -> LeadingMarginSpan.Standard(paraIndent, 0)
+            Flow.POETRY1 -> LeadingMarginSpan.Standard(indentUnit, indentUnit * 2)
+            Flow.POETRY2 -> LeadingMarginSpan.Standard(indentUnit * 2, indentUnit * 3)
+            Flow.POETRY_REFRAIN -> LeadingMarginSpan.Standard(indentUnit * 3, indentUnit * 3)
+            Flow.LIST1 -> LeadingMarginSpan.Standard(indentUnit, indentUnit)
+            Flow.LIST2 -> LeadingMarginSpan.Standard(indentUnit * 2, indentUnit * 2)
+            Flow.STANZA -> return
         }
-        return sb
+        // EXCLUSIVE end: an INCLUSIVE end would grow into later appends and apply
+        // this line's indent to the rest of the page.
+        sb.setSpan(span, start, end, EXCL)
     }
 
     private fun layout(text: CharSequence, paint: TextPaint, width: Int, align: Layout.Alignment) =
@@ -103,7 +182,7 @@ class ReaderTypography(context: Context) {
             .build()
 
     fun bodyLayout(atoms: List<Atom>, width: Int): StaticLayout =
-        layout(spannable(atoms), body, width, Layout.Alignment.ALIGN_NORMAL)
+        layout(build(atoms).text, body, width, Layout.Alignment.ALIGN_NORMAL)
 
     /** Rendered height of atoms [start, start+count), measured exactly as drawn. */
     fun measureBody(atoms: List<Atom>, start: Int, count: Int, width: Int): Int =
@@ -125,26 +204,15 @@ class ReaderTypography(context: Context) {
 
     /**
      * The verse key covering character [offset] in [atoms]' rendered body — the
-     * key of the most recent [NumberAtom] at or before that character. Retraces
-     * exactly the offsets [spannable] lays down (a space before every atom but the
-     * first, then the number/word), so a press hit-tested against the drawn
+     * key of the most recent [NumberAtom] at or before that character. Uses the
+     * exact char [Mark]s [build] laid down, so a press hit-tested against the drawn
      * [StaticLayout] maps back to the verse it fell in. Null if none precedes it.
      */
     fun verseKeyAtOffset(atoms: List<Atom>, offset: Int): Int? {
-        var pos = 0
         var key: Int? = null
-        atoms.forEachIndexed { i, atom ->
-            when (atom) {
-                is NumberAtom -> {
-                    if (i > 0) pos += 1 // the joining space
-                    if (pos <= offset) key = atom.verseKey
-                    pos += atom.number.toString().length
-                }
-                is WordAtom -> {
-                    if (i > 0) pos += 1
-                    pos += atom.word.length
-                }
-            }
+        for (m in build(atoms).marks) {
+            if (m.start > offset) break
+            if (m.atom is NumberAtom) key = m.atom.verseKey
         }
         return key
     }
@@ -157,26 +225,18 @@ class ReaderTypography(context: Context) {
      * word), or null before the first word.
      */
     fun wordAtOffset(atoms: List<Atom>, seed: WordRef, offset: Int): WordRef? {
-        var pos = 0
         var verse = seed.verseKey
         var wordIdx = seed.wordIndex
         var nearest: WordRef? = null
-        for (i in atoms.indices) {
-            when (val atom = atoms[i]) {
-                is NumberAtom -> {
-                    if (i > 0) pos += 1
-                    pos += atom.number.toString().length
-                    verse = atom.verseKey
-                    wordIdx = 0
-                }
+        for (m in build(atoms).marks) {
+            when (val atom = m.atom) {
+                is NumberAtom -> { verse = atom.verseKey; wordIdx = 0 }
                 is WordAtom -> {
-                    if (i > 0) pos += 1
-                    val start = pos
-                    pos += atom.word.length
-                    if (offset in start until pos) return WordRef(verse, wordIdx)
-                    if (start <= offset) nearest = WordRef(verse, wordIdx)
+                    if (offset in m.start until m.end) return WordRef(verse, wordIdx)
+                    if (m.start <= offset) nearest = WordRef(verse, wordIdx)
                     wordIdx += 1
                 }
+                else -> {}
             }
         }
         return nearest
@@ -187,7 +247,7 @@ class ReaderTypography(context: Context) {
      * given highlighted word spans per verse ([spansByVerse] maps a verse key to
      * its inclusive `startWord..endWord` runs). [seed] carries the verse/word count
      * into the page. Adjacent highlighted words are merged into one continuous
-     * underline (the joining space included). Retraces [spannable]'s char offsets.
+     * underline (the joining space included). Uses [build]'s exact char marks.
      */
     fun highlightRanges(
         atoms: List<Atom>,
@@ -195,27 +255,19 @@ class ReaderTypography(context: Context) {
         spansByVerse: Map<Int, List<IntRange>>,
     ): List<IntRange> {
         if (spansByVerse.isEmpty()) return emptyList()
-        var pos = 0
         var verse = seed.verseKey
         var wordIdx = seed.wordIndex
         val words = ArrayList<IntRange>() // per highlighted word, start until end
-        for (i in atoms.indices) {
-            when (val atom = atoms[i]) {
-                is NumberAtom -> {
-                    if (i > 0) pos += 1
-                    pos += atom.number.toString().length
-                    verse = atom.verseKey
-                    wordIdx = 0
-                }
+        for (m in build(atoms).marks) {
+            when (val atom = m.atom) {
+                is NumberAtom -> { verse = atom.verseKey; wordIdx = 0 }
                 is WordAtom -> {
-                    if (i > 0) pos += 1
-                    val start = pos
-                    pos += atom.word.length
                     if (spansByVerse[verse]?.any { wordIdx in it } == true) {
-                        words.add(start until pos)
+                        words.add(m.start until m.end)
                     }
                     wordIdx += 1
                 }
+                else -> {}
             }
         }
         // Merge words separated only by their joining space into one underline.

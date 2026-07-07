@@ -178,8 +178,10 @@ class ReaderActivity : AppCompatActivity() {
         var lastKey = VerseKey.encode(ordinal, chapter, 1)
         val anchors = ArrayList<Int>(pages.size)
         for (atoms in pages) {
-            val first = atoms.firstOrNull()
-            anchors.add(if (first is NumberAtom) first.verseKey else lastKey)
+            // The anchor is the page's first verse number (ignoring leading breaks/
+            // headings); if the page opens mid-verse, the verse carried from above.
+            val firstContent = atoms.firstOrNull { it is NumberAtom || it is WordAtom }
+            anchors.add(if (firstContent is NumberAtom) firstContent.verseKey else lastKey)
             (atoms.lastOrNull { it is NumberAtom } as? NumberAtom)?.let { lastKey = it.verseKey }
         }
         return anchors
@@ -198,6 +200,7 @@ class ReaderActivity : AppCompatActivity() {
             for (a in atoms) when (a) {
                 is NumberAtom -> { verse = a.verseKey; words = 0 }
                 is WordAtom -> words += 1
+                else -> {} // breaks/headings carry no words
             }
         }
         return seeds
@@ -448,6 +451,7 @@ class ReaderActivity : AppCompatActivity() {
         for (atom in atoms) when (atom) {
             is NumberAtom -> { verse = atom.verseKey; wordIdx = 0 }
             is WordAtom -> { out.add(WordRef(verse, wordIdx)); wordIdx += 1 }
+            else -> {} // breaks/headings carry no words
         }
         return out
     }
@@ -615,11 +619,15 @@ class ReaderActivity : AppCompatActivity() {
         if (width <= 0 || height <= 0) return
         val book = AppServices.bible.bookAt(ref.bookIndex)
         val chapter = AppServices.bible.chapter(ref.bookIndex, ref.chapterNumber)
+        val usfm = Canon.byOrdinal(ref.bookIndex + 1).usfm
 
         paginateJob?.cancel()
         paginateJob = lifecycleScope.launch {
+            val blocks = withContext(Dispatchers.IO) {
+                AppServices.bibleDb.blocksForChapter(usfm, chapter.number)
+            }
             val packed = withContext(Dispatchers.Default) {
-                val atoms = ChapterPaginator.atomsFor(chapter, ref.bookIndex + 1)
+                val atoms = ChapterPaginator.atomsForBlocks(blocks)
                 val headingHeight = typo.headingHeight(book.name, chapter.number, width)
                 ChapterPaginator.paginate(
                     atoms = atoms,

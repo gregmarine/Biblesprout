@@ -22,6 +22,23 @@ data class VerseHit(
     val reference: String get() = "${Canon.byUsfm(usfm).name} $chapter:$verse"
 }
 
+/** A superscript verse-number span within a [RenderBlock]'s [content]. */
+data class VerseMark(val start: Int, val end: Int, val verseKey: Int, val number: Int)
+
+/**
+ * One display block from the rich layer: a paragraph, a poetry line, a section
+ * heading or a stanza break, in document order. [content] is the display text
+ * (verse-number digits inlined; [verses] locates them); [kind] is the USFM marker
+ * (`p`, `pmo`, `q1`, `q2`, `b`, `s1`, `s2`, `d`, `r`, `li1`, …).
+ */
+data class RenderBlock(
+    val id: Int,
+    val kind: String,
+    val startKey: Int?,
+    val content: String,
+    val verses: List<VerseMark>,
+)
+
 /**
  * Read-only accessor for a Bible source database (`*.bible`). Opens the prebuilt
  * file plaintext through SQLCipher (its bundled SQLite has the FTS5 the reader's
@@ -117,6 +134,47 @@ class BibleDatabase private constructor(
             """.trimIndent(),
             arrayOf(match),
         ).use { c -> while (c.moveToNext()) out.add(c.toHit()) }
+        return out
+    }
+
+    /**
+     * The chapter's display blocks (paragraphs, poetry lines, headings, stanza
+     * breaks) in reading order, each carrying its verse-number spans — the rich
+     * layer the formatted reader renders. `usfm` is the book code (e.g. "PSA").
+     */
+    fun blocksForChapter(usfm: String, chapter: Int): List<RenderBlock> {
+        val markers = HashMap<Int, MutableList<VerseMark>>()
+        db.rawQuery(
+            """
+            SELECT vm.block_id, vm.start, vm.end, vm.verse_key, vm.number
+            FROM verse_marker vm JOIN block b ON b.id = vm.block_id
+            WHERE b.usfm = ? AND b.chapter = ?
+            """.trimIndent(),
+            arrayOf(usfm, chapter.toString()),
+        ).use { c ->
+            while (c.moveToNext()) {
+                markers.getOrPut(c.getInt(0)) { mutableListOf() }
+                    .add(VerseMark(c.getInt(1), c.getInt(2), c.getInt(3), c.getInt(4)))
+            }
+        }
+        val out = ArrayList<RenderBlock>()
+        db.rawQuery(
+            "SELECT id, kind, start_key, content FROM block WHERE usfm = ? AND chapter = ? ORDER BY id",
+            arrayOf(usfm, chapter.toString()),
+        ).use { c ->
+            while (c.moveToNext()) {
+                val id = c.getInt(0)
+                out.add(
+                    RenderBlock(
+                        id = id,
+                        kind = c.getString(1),
+                        startKey = if (c.isNull(2)) null else c.getInt(2),
+                        content = c.getString(3),
+                        verses = markers[id]?.sortedBy { it.start } ?: emptyList(),
+                    ),
+                )
+            }
+        }
         return out
     }
 

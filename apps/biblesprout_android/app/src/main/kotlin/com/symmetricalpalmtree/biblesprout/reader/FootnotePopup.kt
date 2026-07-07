@@ -48,8 +48,8 @@ object FootnotePopup {
             orientation = LinearLayout.VERTICAL
             background = GradientDrawable().apply {
                 setColor(white)
-                setStroke(dp(3), black)
-                cornerRadius = dp(6).toFloat()
+                setStroke(maxOf(1, dp(1)), black) // thin hairline, like the app's rules
+                cornerRadius = dp(4).toFloat()
             }
             addView(
                 TextView(activity).apply {

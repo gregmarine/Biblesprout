@@ -563,8 +563,8 @@ class ReaderActivity : AppCompatActivity() {
         return chapterFootnotes[id]
     }
 
-    /** The cross-reference target verse key tapped at (x, y), if any. */
-    private fun xrefAt(x: Float, y: Float): Int? {
+    /** The cross-reference target range (`startKey to endKey`) tapped at (x, y), if any. */
+    private fun xrefAt(x: Float, y: Float): Pair<Int, Int>? {
         val body = currentBody ?: return null
         if (pages.isEmpty()) return null
         val localX = (x - binding.reader.horizontalPad).toInt()
@@ -575,15 +575,12 @@ class ReaderActivity : AppCompatActivity() {
         return typo.xrefAtOffset(pages[page], offset)
     }
 
-    /** Opens the reader at the chapter/verse a cross-reference points to. */
-    private fun navigateToVerse(verseKey: Int) {
-        val ordinal = VerseKey.ordinalOf(verseKey)
-        startActivity(
-            Intent(this, ReaderActivity::class.java)
-                .putExtra(EXTRA_BOOK_INDEX, ordinal - 1)
-                .putExtra(EXTRA_CHAPTER, VerseKey.chapterOf(verseKey))
-                .putExtra(EXTRA_START_VERSE, VerseKey.verseOf(verseKey)),
-        )
+    /**
+     * Opens a cross-referenced range in the passage view — shown like a search
+     * result, from where its "Full chapter" action jumps into the reader.
+     */
+    private fun openPassage(startKey: Int, endKey: Int) {
+        startActivity(PassageActivity.intent(this, startKey, endKey))
     }
 
     /** Opens commentary anchored to the verse under a long-press, if any. */
@@ -745,18 +742,18 @@ class ReaderActivity : AppCompatActivity() {
                     handleHighlightTap(e.x, e.y)
                     return true
                 }
-                // A tap on a cross-reference (a \r parallel-passage link) navigates
-                // instead of turning the page.
-                xrefAt(e.x, e.y)?.let {
-                    navigateToVerse(it)
+                // A tap on a cross-reference (a \r parallel-passage link) opens the
+                // referenced passage instead of turning the page.
+                xrefAt(e.x, e.y)?.let { (startKey, endKey) ->
+                    openPassage(startKey, endKey)
                     return true
                 }
                 // A tap on a footnote caller opens its popup instead of turning the page.
                 footnoteAt(e.x, e.y)?.let { note ->
                     val links = noteXrefs[note.id].orEmpty()
-                        .map { FootnotePopup.Link(it.start, it.end, it.targetKey) }
-                    FootnotePopup.show(this@ReaderActivity, note.verseKey, note.text, links) { key ->
-                        navigateToVerse(key)
+                        .map { FootnotePopup.Link(it.start, it.end, it.targetStartKey, it.targetEndKey) }
+                    FootnotePopup.show(this@ReaderActivity, note.verseKey, note.text, links) { s, e2 ->
+                        openPassage(s, e2)
                     }
                     return true
                 }

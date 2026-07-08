@@ -56,15 +56,16 @@ data class Footnote(
  * A tappable cross-reference span. [sourceKind] is `"block"` (the span sits in a
  * `\r` parallel-passage heading's content) or `"note"` (it sits in a footnote's
  * body text); [sourceId] is the block id or footnote id accordingly. [start]/[end]
- * are char offsets into that source's text, and [targetKey] is the verse key to
- * navigate to when tapped.
+ * are char offsets into that source's text, and [targetStartKey]..[targetEndKey]
+ * is the inclusive verse-key range it points at.
  */
 data class Xref(
     val sourceKind: String,
     val sourceId: Int,
     val start: Int,
     val end: Int,
-    val targetKey: Int,
+    val targetStartKey: Int,
+    val targetEndKey: Int,
 )
 
 /**
@@ -243,11 +244,11 @@ class BibleDatabase private constructor(
         val out = ArrayList<Xref>()
         db.rawQuery(
             """
-            SELECT x.source_kind, x.source_id, x.start, x.end, x.target_start_key
+            SELECT x.source_kind, x.source_id, x.start, x.end, x.target_start_key, x.target_end_key
             FROM xref x JOIN block b ON b.id = x.source_id
             WHERE x.source_kind = 'block' AND b.usfm = ? AND b.chapter = ?
             UNION ALL
-            SELECT x.source_kind, x.source_id, x.start, x.end, x.target_start_key
+            SELECT x.source_kind, x.source_id, x.start, x.end, x.target_start_key, x.target_end_key
             FROM xref x
               JOIN footnote f ON f.id = x.source_id
               JOIN block b ON b.id = f.block_id
@@ -262,7 +263,8 @@ class BibleDatabase private constructor(
                         sourceId = c.getInt(1),
                         start = c.getInt(2),
                         end = c.getInt(3),
-                        targetKey = c.getInt(4),
+                        targetStartKey = c.getInt(4),
+                        targetEndKey = c.getInt(5),
                     ),
                 )
             }

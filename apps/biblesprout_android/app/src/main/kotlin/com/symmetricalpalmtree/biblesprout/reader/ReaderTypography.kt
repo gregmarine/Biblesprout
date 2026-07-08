@@ -81,8 +81,8 @@ class ReaderTypography(context: Context) {
     /** The char span an atom's own glyphs occupy in a built layout. */
     private data class Mark(val atom: Atom, val start: Int, val end: Int)
 
-    /** The char span a cross-reference link occupies, and the verse key it targets. */
-    private data class XrefMark(val start: Int, val end: Int, val targetKey: Int)
+    /** The char span a cross-reference link occupies, and the verse-key range it targets. */
+    private data class XrefMark(val start: Int, val end: Int, val targetStartKey: Int, val targetEndKey: Int)
 
     private class Built(
         val text: SpannableStringBuilder,
@@ -144,7 +144,7 @@ class ReaderTypography(context: Context) {
                         val le = (start + link.end).coerceIn(ls, sb.length)
                         if (le > ls) {
                             sb.setSpan(UnderlineSpan(), ls, le, EXCL)
-                            xrefs.add(XrefMark(ls, le, link.targetKey))
+                            xrefs.add(XrefMark(ls, le, link.targetStartKey, link.targetEndKey))
                         }
                     }
                     sb.append('\n') // end the heading line; next line starts a gap-free body line
@@ -259,13 +259,14 @@ class ReaderTypography(context: Context) {
     }
 
     /**
-     * The verse key of the cross-reference link covering character [offset] (a
-     * tapped `\r` parallel-passage reference), or null if none. Uses the exact char
-     * spans [build] underlined, so a tap on the drawn link resolves its target.
+     * The target verse-key range (`startKey to endKey`) of the cross-reference link
+     * covering character [offset] (a tapped `\r` parallel-passage reference), or null
+     * if none. Uses the exact char spans [build] underlined, so a tap on the drawn
+     * link resolves its target.
      */
-    fun xrefAtOffset(atoms: List<Atom>, offset: Int): Int? {
+    fun xrefAtOffset(atoms: List<Atom>, offset: Int): Pair<Int, Int>? {
         for (x in build(atoms).xrefs) {
-            if (offset in x.start until x.end) return x.targetKey
+            if (offset in x.start until x.end) return x.targetStartKey to x.targetEndKey
         }
         return null
     }

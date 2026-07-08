@@ -106,7 +106,7 @@ object ChapterPaginator {
     }
 
     private fun headingFor(block: RenderBlock, xrefs: List<Xref>): HeadingAtom? {
-        val links = xrefs.map { XrefLink(it.start, it.end, it.targetKey) }
+        val links = xrefs.map { XrefLink(it.start, it.end, it.targetStartKey, it.targetEndKey) }
         return when (block.kind) {
             "s1", "ms", "ms1" -> HeadingAtom(block.content, minor = false, links = links)
             "s2", "s3", "mr", "r", "d", "qa", "sr", "sp" ->

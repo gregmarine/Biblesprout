@@ -34,15 +34,18 @@ import com.symmetricalpalmtree.biblesprout.data.VerseKey
  */
 object FootnotePopup {
 
-    /** A tappable reference span in the footnote body: [start] until [end] chars → [targetKey]. */
-    data class Link(val start: Int, val end: Int, val targetKey: Int)
+    /**
+     * A tappable reference span in the footnote body: [start] until [end] chars point
+     * at the inclusive verse-key range [targetStartKey]..[targetEndKey].
+     */
+    data class Link(val start: Int, val end: Int, val targetStartKey: Int, val targetEndKey: Int)
 
     fun show(
         activity: AppCompatActivity,
         verseKey: Int?,
         text: String,
         links: List<Link> = emptyList(),
-        onNavigate: ((Int) -> Unit)? = null,
+        onNavigate: ((Int, Int) -> Unit)? = null,
     ) {
         val black = ContextCompat.getColor(activity, R.color.eink_black)
         val white = ContextCompat.getColor(activity, R.color.eink_white)
@@ -67,7 +70,7 @@ object FootnotePopup {
                     setSpan(
                         object : ClickableSpan() {
                             override fun onClick(widget: View) {
-                                onNavigate?.invoke(link.targetKey)
+                                onNavigate?.invoke(link.targetStartKey, link.targetEndKey)
                                 dialog?.dismiss()
                             }
                             // Keep e-ink black with a plain underline — no accent-blue link tint.

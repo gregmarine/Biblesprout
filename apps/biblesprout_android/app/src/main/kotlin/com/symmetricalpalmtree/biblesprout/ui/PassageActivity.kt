@@ -1,6 +1,8 @@
 package com.symmetricalpalmtree.biblesprout.ui
 
 import android.annotation.SuppressLint
+import android.content.Context
+import android.content.Intent
 import android.os.Bundle
 import android.view.GestureDetector
 import android.view.MotionEvent
@@ -18,6 +20,7 @@ import com.symmetricalpalmtree.biblesprout.data.Passage
 import com.symmetricalpalmtree.biblesprout.data.ReferenceParser
 import com.symmetricalpalmtree.biblesprout.data.VerseHit
 import com.symmetricalpalmtree.biblesprout.data.VerseKey
+import com.symmetricalpalmtree.biblesprout.data.VerseRange
 import com.symmetricalpalmtree.biblesprout.databinding.ActivityPassageBinding
 import com.symmetricalpalmtree.biblesprout.reader.Atom
 import com.symmetricalpalmtree.biblesprout.reader.CommentaryLauncher
@@ -75,13 +78,22 @@ class PassageActivity : AppCompatActivity() {
         binding.back.setOnClickListener { finish() }
         attachGestures()
 
+        binding.chapter.setOnClickListener { openChapter() }
         binding.notes.setOnClickListener { openPassageCommentary() }
         binding.notebook.setOnClickListener { openPassageNotebook() }
 
         val query = intent.getStringExtra(EXTRA_QUERY).orEmpty()
+        val startKey = intent.getIntExtra(EXTRA_START_KEY, -1)
+        val endKey = intent.getIntExtra(EXTRA_END_KEY, -1)
         lifecycleScope.launch {
             AppServices.bootstrap(applicationContext)
-            passages = ReferenceParser.parseAll(query)
+            // Launched either from a typed reference (a query to parse) or a resolved
+            // verse-key range (a tapped cross-reference).
+            passages = if (startKey > 0) {
+                listOf(passageFromRange(startKey, if (endKey > 0) endKey else startKey))
+            } else {
+                ReferenceParser.parseAll(query)
+            }
             binding.title.text = passages.joinToString("; ") { it.format() }
             binding.notes.visibility =
                 if (AppServices.commentaries.isNotEmpty()) View.VISIBLE else View.GONE
@@ -91,6 +103,26 @@ class PassageActivity : AppCompatActivity() {
             blocks = buildBlocks(verses)
             binding.flow.doOnLayout { repaginate() }
         }
+    }
+
+    /** A single-range passage from a resolved verse-key span (a tapped cross-reference). */
+    private fun passageFromRange(startKey: Int, endKey: Int): Passage {
+        val book = Canon.byOrdinal(VerseKey.ordinalOf(startKey))
+        return Passage(book, listOf(VerseRange(startKey, endKey)))
+    }
+
+    /**
+     * Opens the full chapter in the reader, landing on the page where this passage
+     * begins (its start verse). For a multi-reference view, the first passage wins.
+     */
+    private fun openChapter() {
+        val key = passages.firstOrNull()?.startKey ?: return
+        startActivity(
+            Intent(this, ReaderActivity::class.java)
+                .putExtra(ReaderActivity.EXTRA_BOOK_INDEX, VerseKey.ordinalOf(key) - 1)
+                .putExtra(ReaderActivity.EXTRA_CHAPTER, VerseKey.chapterOf(key))
+                .putExtra(ReaderActivity.EXTRA_START_VERSE, VerseKey.verseOf(key)),
+        )
     }
 
     /** Opens commentary over the passage's whole (possibly multi-book) span. */
@@ -264,5 +296,13 @@ class PassageActivity : AppCompatActivity() {
     companion object {
         private const val FULL_REFRESH_EVERY = 6
         const val EXTRA_QUERY = "query"
+        const val EXTRA_START_KEY = "start_key"
+        const val EXTRA_END_KEY = "end_key"
+
+        /** Opens the passage view over a resolved verse-key range (e.g. a cross-reference). */
+        fun intent(context: Context, startKey: Int, endKey: Int): Intent =
+            Intent(context, PassageActivity::class.java)
+                .putExtra(EXTRA_START_KEY, startKey)
+                .putExtra(EXTRA_END_KEY, endKey)
     }
 }

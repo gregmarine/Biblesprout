@@ -28,9 +28,10 @@ data class BreakAtom(val flow: Flow) : Atom
 
 /**
  * A tappable cross-reference span inside a [HeadingAtom]'s text: [start] until [end]
- * are char offsets into the heading text, [targetKey] is the verse it navigates to.
+ * are char offsets into the heading text, and [targetStartKey]..[targetEndKey] is the
+ * inclusive verse-key range it points at.
  */
-data class XrefLink(val start: Int, val end: Int, val targetKey: Int)
+data class XrefLink(val start: Int, val end: Int, val targetStartKey: Int, val targetEndKey: Int)
 
 /**
  * A centered section heading rendered inline in the flow (e.g. "The Creation"). A

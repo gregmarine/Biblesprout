@@ -90,10 +90,14 @@ hard-bordered, scrimless, immersive-preserving panel — kept full-screen + `FLA
 so taps don't leak and the BOOX system bars stay hidden). Cross-references are wired too
 (`xrefsForChapter()`): `source_kind='block'` spans (in `\r` parallel-passage headings) become
 underlined links carried on `HeadingAtom.links`, marked by `build()` and hit-tested via
-`xrefAtOffset` → `navigateToVerse`; `source_kind='note'` spans (citations inside a footnote
-body) render as underlined `ClickableSpan`s in `FootnotePopup` that navigate on tap. Both open
-the reader at the target verse via `EXTRA_START_VERSE`. Rebuild the DB with
-`data/tools/build_bible_db.py` after editing `bsb_usfm/`.
+`xrefAtOffset`; `source_kind='note'` spans (citations inside a footnote body) render as
+underlined `ClickableSpan`s in `FootnotePopup`. Tapping either opens the referenced
+`target_start_key..target_end_key` range in the **passage view** (`PassageActivity.intent(startKey,
+endKey)`) — shown like a search result, not jumped straight into the reader. `PassageActivity`
+(reached from a typed reference in Find, or a tapped cross-reference) carries a **"Full chapter"**
+toolbar action that opens the reader at the passage's start verse, landing on that verse's page
+via `EXTRA_START_VERSE`. Rebuild the DB with `data/tools/build_bible_db.py` after editing
+`bsb_usfm/`.
 
 ## Native Android (`apps/biblesprout_android/`)
 

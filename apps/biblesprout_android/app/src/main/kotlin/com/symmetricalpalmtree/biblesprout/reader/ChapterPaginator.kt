@@ -132,11 +132,33 @@ object ChapterPaginator {
         while (start < atoms.size) {
             val maxHeight = if (pages.isEmpty()) firstPageHeight else otherPageHeight
             // Always place at least one atom to guarantee progress.
-            val count = fitCount(atoms, start, maxHeight, typo, width).coerceAtLeast(1)
+            val fitted = fitCount(atoms, start, maxHeight, typo, width).coerceAtLeast(1)
+            val count = trimDanglingOpeners(atoms, start, fitted)
             pages.add(ArrayList(atoms.subList(start, start + count)))
             start += count
         }
         return pages
+    }
+
+    /**
+     * Never end a page on the atoms that *open* the next verse — a verse [NumberAtom],
+     * or the [BreakAtom]/[HeadingAtom]s that precede it — when their text spilled onto
+     * the following page. Backs the page's cut off to the last real content atom (a
+     * word, or a footnote caller attached to one) so a verse number always stays on
+     * the page with its text. If the fitted page has no content atom at all (e.g. a
+     * lone oversized heading), it is left as-is so pagination still makes progress.
+     */
+    private fun trimDanglingOpeners(atoms: List<Atom>, start: Int, count: Int): Int {
+        var lastContent = -1
+        for (i in start until start + count) {
+            when (atoms[i]) {
+                is WordAtom, is FootnoteAtom -> lastContent = i
+                else -> {}
+            }
+        }
+        if (lastContent < 0) return count
+        val trimmed = lastContent - start + 1
+        return if (trimmed < count) trimmed else count
     }
 
     /**

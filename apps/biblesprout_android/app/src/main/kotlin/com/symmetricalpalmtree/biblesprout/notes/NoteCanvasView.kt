@@ -13,6 +13,7 @@ import android.util.TypedValue
 import android.view.MotionEvent
 import android.view.View
 import com.onyx.android.sdk.api.device.epd.EpdController
+import com.onyx.android.sdk.api.device.epd.UpdateMode
 import com.onyx.android.sdk.data.note.TouchPoint
 import com.onyx.android.sdk.pen.RawInputCallback
 import com.onyx.android.sdk.pen.TouchHelper
@@ -283,6 +284,7 @@ class NoteCanvasView @JvmOverloads constructor(context: Context, attrs: Attribut
         // live ink (the SDK primes the render surface lazily). Only the eraser disables it.
         if (tool == Tool.ERASER) touchHelper.setRawDrawingRenderEnabled(false)
         EpdController.setUpdListSize(EPD_UPDATE_LIST_SIZE)
+        applyHandwritingFastMode()
     }
 
     private fun applyLimitRect() {
@@ -314,7 +316,25 @@ class NoteCanvasView @JvmOverloads constructor(context: Context, attrs: Attribut
             touchHelper.setRawDrawingEnabled(false)
             touchHelper.closeRawDrawing()
             penOwner = null
+            // Drop the handwriting fast-mode so the rest of the app (menus, dialogs,
+            // other screens) renders in normal quality; a new owner re-applies it.
+            EpdController.clearAppScopeUpdate()
         }
+    }
+
+    /**
+     * Pin the app's default panel update mode to the fast handwriting waveform while the
+     * pen pipeline is live, via [EpdController.applyAppScopeUpdate]. Without this the first
+     * stroke after an open / page-flip pays a GC→handwriting mode switch (a 1–2s warm-up
+     * lag on the BOOX). This is the Notesprout "AppScope-HWR" fix: a device sweep there
+     * proved scribble / view-mode / system-fast all still lagged — only app-scope was
+     * instant with no ghosting. Idempotent: re-applying the same tag is a panel no-op.
+     * Cleared in [closeIfOwner] when we relinquish the pipeline.
+     */
+    private fun applyHandwritingFastMode() {
+        EpdController.applyAppScopeUpdate(
+            HWR_APP_SCOPE, true, false, UpdateMode.HAND_WRITING_REPAINT_MODE, 0,
+        )
     }
 
     private fun dp(value: Float): Float =
@@ -322,6 +342,10 @@ class NoteCanvasView @JvmOverloads constructor(context: Context, attrs: Attribut
 
     companion object {
         private const val EPD_UPDATE_LIST_SIZE = 512
+
+        // App-scope tag pinning the panel into the fast handwriting waveform (see
+        // [applyHandwritingFastMode]) — the Notesprout first-stroke fix, ported here.
+        private const val HWR_APP_SCOPE = "biblesprout_hwr"
 
         // The Onyx raw-drawing pipeline is a single process-global hardware
         // resource; only the current owner may close it, so a screen we've left

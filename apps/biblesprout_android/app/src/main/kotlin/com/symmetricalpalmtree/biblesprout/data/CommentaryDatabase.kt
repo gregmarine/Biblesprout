@@ -26,6 +26,18 @@ data class CommentaryEntry(
 }
 
 /**
+ * A tappable scripture reference inside a commentary entry's body: [start, end)
+ * are char offsets into [CommentaryEntry.body], and [targetStartKey]..[targetEndKey]
+ * is the inclusive verse-key range it points at (tap → open that passage).
+ */
+data class CommentaryXref(
+    val start: Int,
+    val end: Int,
+    val targetStartKey: Int,
+    val targetEndKey: Int,
+)
+
+/**
  * Read-only accessor for a commentary source database (`*.commentary`). Comments
  * are addressed by the same canonical verse keys the Bible uses, so
  * [entriesForVerse] answers "what does this commentary say about verse K" with a
@@ -40,6 +52,15 @@ class CommentaryDatabase private constructor(
 ) {
     val id: String get() = metadata["id"] ?: "unknown"
     val title: String get() = metadata["title"] ?: id
+
+    /** Whether this source carries the tappable-reference layer (schema v2+). Older
+     *  Matthew Henry builds predate the xref table, so guard against its absence. */
+    private val hasXrefs: Boolean by lazy {
+        db.rawQuery(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='xref'",
+            null,
+        ).use { it.moveToNext() }
+    }
 
     fun close() = db.close()
 
@@ -74,6 +95,34 @@ class CommentaryDatabase private constructor(
             """.trimIndent(),
             arrayOf(match),
         ).use { c -> while (c.moveToNext()) out.add(c.toEntry()) }
+        return out
+    }
+
+    /**
+     * The tappable scripture references inside the given entries' bodies, grouped
+     * by entry id. Empty for sources without the xref layer. [start, end) are char
+     * offsets into that entry's [CommentaryEntry.body].
+     */
+    fun xrefsForEntries(entryIds: List<Int>): Map<Int, List<CommentaryXref>> {
+        if (entryIds.isEmpty() || !hasXrefs) return emptyMap()
+        val ids = entryIds.joinToString(",")  // ints, safe to inline
+        val out = HashMap<Int, MutableList<CommentaryXref>>()
+        db.rawQuery(
+            "SELECT x.entry_id, x.start, x.end, x.target_start_key, x.target_end_key " +
+                "FROM xref x WHERE x.entry_id IN ($ids) ORDER BY x.entry_id, x.start",
+            null,
+        ).use { c ->
+            while (c.moveToNext()) {
+                out.getOrPut(c.getInt(0)) { ArrayList() }.add(
+                    CommentaryXref(
+                        start = c.getInt(1),
+                        end = c.getInt(2),
+                        targetStartKey = c.getInt(3),
+                        targetEndKey = c.getInt(4),
+                    ),
+                )
+            }
+        }
         return out
     }
 

@@ -163,10 +163,30 @@ class ReaderTypography(context: Context) {
                     atLineStart = false
                 }
                 is WordAtom -> {
+                    val sepStart = sb.length
                     if (!atLineStart) sb.append(' ')
                     val start = sb.length
                     sb.append(atom.word)
                     marks.add(Mark(atom, start, sb.length))
+                    // A commentary word inside a scripture reference: underline it so it
+                    // reads as a link, and record its span so a tap resolves the target.
+                    // A multi-word reference ("Na 1:1") arrives as adjacent linked words
+                    // with the same target — extend the previous span across the joining
+                    // space so the whole reference underlines as one and no gap between
+                    // the words swallows a tap.
+                    if (atom.isLink) {
+                        val prev = xrefs.lastOrNull()
+                        if (prev != null && prev.end == sepStart &&
+                            prev.targetStartKey == atom.linkStartKey &&
+                            prev.targetEndKey == atom.linkEndKey
+                        ) {
+                            sb.setSpan(UnderlineSpan(), prev.end, sb.length, EXCL)
+                            xrefs[xrefs.size - 1] = prev.copy(end = sb.length)
+                        } else {
+                            sb.setSpan(UnderlineSpan(), start, sb.length, EXCL)
+                            xrefs.add(XrefMark(start, sb.length, atom.linkStartKey, atom.linkEndKey))
+                        }
+                    }
                     atLineStart = false
                 }
                 is FootnoteAtom -> {

@@ -4,6 +4,7 @@ import android.annotation.SuppressLint
 import android.content.Context
 import android.content.Intent
 import android.os.Bundle
+import android.text.Layout
 import android.view.GestureDetector
 import android.view.MotionEvent
 import android.view.View
@@ -17,6 +18,7 @@ import com.symmetricalpalmtree.biblesprout.R
 import com.symmetricalpalmtree.biblesprout.data.AppServices
 import com.symmetricalpalmtree.biblesprout.data.CommentaryDatabase
 import com.symmetricalpalmtree.biblesprout.data.CommentaryEntry
+import com.symmetricalpalmtree.biblesprout.data.CommentaryXref
 import com.symmetricalpalmtree.biblesprout.data.VerseRange
 import com.symmetricalpalmtree.biblesprout.databinding.ActivityCommentaryBinding
 import com.symmetricalpalmtree.biblesprout.reader.Atom
@@ -57,6 +59,7 @@ class CommentaryActivity : AppCompatActivity() {
     private var page = 0
     private var turnsSinceRefresh = 0
     private var paginateJob: Job? = null
+    private var hits: List<Hit> = emptyList()
 
     private val safetyPad by lazy { typo.dp(8f) }
     private val headingTopPad by lazy { typo.dp(18f) }
@@ -96,7 +99,10 @@ class CommentaryActivity : AppCompatActivity() {
         db = chosen
 
         val entries = withContext(Dispatchers.IO) { gather(chosen) }
-        blocks = buildBlocks(entries)
+        val xrefs = withContext(Dispatchers.IO) {
+            chosen.xrefsForEntries(entries.map { it.id })
+        }
+        blocks = buildBlocks(entries, xrefs)
         page = 0
 
         val abbr = chosen.metadata["abbreviation"] ?: getString(R.string.notes)
@@ -118,14 +124,30 @@ class CommentaryActivity : AppCompatActivity() {
         return out
     }
 
-    /** A heading (the comment's own section title) then its prose as word atoms. */
-    private fun buildBlocks(entries: List<CommentaryEntry>): List<PassageItem> {
+    /**
+     * A heading (the comment's own section title) then its prose as word atoms.
+     * A word overlapping one of the entry's [CommentaryXref] spans carries that
+     * reference's target range, so it renders as a tappable link.
+     */
+    private fun buildBlocks(
+        entries: List<CommentaryEntry>,
+        xrefsByEntry: Map<Int, List<CommentaryXref>>,
+    ): List<PassageItem> {
         val blocks = ArrayList<PassageItem>()
         for (entry in entries) {
             entry.heading?.let { blocks.add(HeadingItem(it)) }
+            val xrefs = xrefsByEntry[entry.id].orEmpty()
             val atoms = ArrayList<Atom>()
-            for (word in entry.body.split(WHITESPACE)) {
-                if (word.isNotEmpty()) atoms.add(WordAtom(word))
+            // Split into words keeping each word's offset in body, so a word can be
+            // matched against the reference spans (which are body char offsets).
+            for (m in NONSPACE.findAll(entry.body)) {
+                val ws = m.range.first
+                val we = m.range.last + 1
+                val link = xrefs.firstOrNull { it.start < we && it.end > ws }
+                atoms.add(
+                    if (link != null) WordAtom(m.value, link.targetStartKey, link.targetEndKey)
+                    else WordAtom(m.value),
+                )
             }
             if (atoms.isNotEmpty()) blocks.add(TextItem(atoms))
         }
@@ -167,18 +189,58 @@ class CommentaryActivity : AppCompatActivity() {
     private fun renderCurrentPage() {
         if (pages.isEmpty()) return
         val width = binding.flow.readingWidth()
-        binding.flow.elements = pages[page].map { item ->
+        val els = ArrayList<FlowElement>()
+        val hitList = ArrayList<Hit>()
+        var y = 0
+        for (item in pages[page]) {
+            val fe: FlowElement
+            val atoms: List<Atom>?
             when (item) {
-                is HeadingItem -> FlowElement(
-                    typo.passageHeadingLayout(item.text, width),
-                    headingTopPad,
-                    headingBottomPad,
-                )
-                is TextItem -> FlowElement(typo.bodyLayout(item.atoms, width))
+                is HeadingItem -> {
+                    fe = FlowElement(
+                        typo.passageHeadingLayout(item.text, width),
+                        headingTopPad,
+                        headingBottomPad,
+                    )
+                    atoms = null
+                }
+                is TextItem -> {
+                    fe = FlowElement(typo.bodyLayout(item.atoms, width))
+                    atoms = item.atoms
+                }
             }
+            // Mirror FlowingView's stacking so a tap's y maps back to an element.
+            y += fe.topPad
+            hitList.add(Hit(y, fe.layout, atoms))
+            y += fe.layout.height + fe.bottomPad
+            els.add(fe)
         }
+        binding.flow.elements = els
+        hits = hitList
         binding.pageIndicator.text =
             if (pages.size > 1) getString(R.string.page_indicator, page + 1, pages.size) else ""
+    }
+
+    /** One stacked element's vertical placement on the page + its atoms (null for a
+     *  heading), so a tap can be hit-tested to a cross-reference. */
+    private class Hit(val top: Int, val layout: Layout, val atoms: List<Atom>?)
+
+    /** The cross-reference target range tapped at (x, y) in the flow view, if any. */
+    private fun xrefAt(x: Float, y: Float): Pair<Int, Int>? {
+        val localX = (x - binding.flow.horizontalPad).toInt()
+        val contentY = y - binding.flow.verticalPad
+        for (h in hits) {
+            val atoms = h.atoms ?: continue
+            if (contentY < h.top || contentY > h.top + h.layout.height) continue
+            val line = h.layout.getLineForVertical((contentY - h.top).toInt())
+            val offset = h.layout.getOffsetForHorizontal(line, localX.toFloat())
+            return typo.xrefAtOffset(atoms, offset)
+        }
+        return null
+    }
+
+    private fun openPassage(startKey: Int, endKey: Int) {
+        startActivity(PassageActivity.intent(this, startKey, endKey))
     }
 
     private fun turn(delta: Int) {
@@ -204,6 +266,11 @@ class CommentaryActivity : AppCompatActivity() {
             override fun onDown(e: MotionEvent) = true
 
             override fun onSingleTapUp(e: MotionEvent): Boolean {
+                // A tapped cross-reference wins over the page-turn zones.
+                xrefAt(e.x, e.y)?.let { (startKey, endKey) ->
+                    openPassage(startKey, endKey)
+                    return true
+                }
                 val third = binding.flow.width / 3f
                 when {
                     e.x < third -> turn(-1)
@@ -243,7 +310,7 @@ class CommentaryActivity : AppCompatActivity() {
 
     companion object {
         private const val FULL_REFRESH_EVERY = 6
-        private val WHITESPACE = Regex("\\s+")
+        private val NONSPACE = Regex("\\S+")
         private const val EXTRA_COMMENTARY_ID = "commentary_id"
         private const val EXTRA_REFERENCE = "reference"
         private const val EXTRA_RANGES = "ranges"

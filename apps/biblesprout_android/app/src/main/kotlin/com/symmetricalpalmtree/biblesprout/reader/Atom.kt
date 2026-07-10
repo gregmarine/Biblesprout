@@ -14,7 +14,19 @@ sealed interface Atom
  */
 data class NumberAtom(val number: Int, val verseKey: Int) : Atom
 
-data class WordAtom(val word: String) : Atom
+/**
+ * A single word of body text. In commentary bodies a word that falls inside a
+ * scripture-reference span carries that reference's target verse-key range
+ * ([linkStartKey] >= 0), so it renders underlined and taps navigate to it; Bible
+ * body words leave it unset.
+ */
+data class WordAtom(
+    val word: String,
+    val linkStartKey: Int = -1,
+    val linkEndKey: Int = -1,
+) : Atom {
+    val isLink: Boolean get() = linkStartKey >= 0
+}
 
 /**
  * How a [BreakAtom] starts a new line — the print structure carried over from the

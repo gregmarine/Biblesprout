@@ -55,7 +55,7 @@ ROOT = os.path.abspath(os.path.join(HERE, os.pardir, os.pardir))
 sys.path.insert(0, HERE)
 from build_bible_db import CANON, ORDINAL, NAME, TESTAMENT, MAX_VERSE, encode, clean_ws
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 
 # --- build configuration per commentary id ----------------------------------
@@ -162,7 +162,101 @@ def is_chapter_title(title):
     return title.strip().lower().startswith("chapter") and chapter_num(title) > 0
 
 
-# --- osisRef -----------------------------------------------------------------
+# --- osisRef: cross-reference target resolution ------------------------------
+# CCEL tags scripture references inside commentary prose as <scripRef> with an
+# OSIS-coded osisRef (e.g. "Bible:Prov.8.22", "Bible:Gen.1.3-Gen.1.5"). Map the
+# OSIS book code to the canon so a reference resolves to a target verse-key range.
+# Deuterocanonical codes (1Macc, Sir, Wis, Tob, ...) aren't in the 66-book canon,
+# so they don't resolve and are left as plain text.
+OSIS_CODES = [
+    "Gen", "Exod", "Lev", "Num", "Deut", "Josh", "Judg", "Ruth", "1Sam", "2Sam",
+    "1Kgs", "2Kgs", "1Chr", "2Chr", "Ezra", "Neh", "Esth", "Job", "Ps", "Prov",
+    "Eccl", "Song", "Isa", "Jer", "Lam", "Ezek", "Dan", "Hos", "Joel", "Amos",
+    "Obad", "Jonah", "Mic", "Nah", "Hab", "Zeph", "Hag", "Zech", "Mal", "Matt",
+    "Mark", "Luke", "John", "Acts", "Rom", "1Cor", "2Cor", "Gal", "Eph", "Phil",
+    "Col", "1Thess", "2Thess", "1Tim", "2Tim", "Titus", "Phlm", "Heb", "Jas",
+    "1Pet", "2Pet", "1John", "2John", "3John", "Jude", "Rev",
+]
+OSIS_TO_ORDINAL = {osis: ORDINAL[usfm] for osis, (usfm, *_) in zip(OSIS_CODES, CANON)}
+
+
+def _osis_part(token):
+    """(ordinal, chapter, verse) for an OSIS `Book.ch.v` token; verse (and
+    chapter) default to 0 when absent. None if the book isn't in the canon."""
+    parts = token.split(".")
+    ordinal = OSIS_TO_ORDINAL.get(parts[0])
+    if ordinal is None:
+        return None
+    chapter = int(parts[1]) if len(parts) >= 2 and parts[1].isdigit() else 0
+    verse = int(parts[2]) if len(parts) >= 3 and parts[2].isdigit() else 0
+    return ordinal, chapter, verse
+
+
+def resolve_osis(osis_ref):
+    """Inclusive (target_start_key, target_end_key) for a scripRef osisRef, or
+    None if it can't be resolved (unknown book, no chapter). A bare chapter ref
+    ("Bible:Ps.23") targets the whole chapter."""
+    if not osis_ref:
+        return None
+    s = osis_ref[6:] if osis_ref.startswith("Bible:") else osis_ref
+    lo, _, hi = s.partition("-")
+    a = _osis_part(lo)
+    if a is None or a[1] == 0:  # need at least a book + chapter
+        return None
+    ao, ac, av = a
+    if hi:
+        b = _osis_part(hi) or a
+        bo, bc, bv = b
+        return encode(ao, ac, av), encode(bo, bc, bv if bv else MAX_VERSE)
+    if av == 0:  # whole chapter
+        return encode(ao, ac, 0), encode(ao, ac, MAX_VERSE)
+    return encode(ao, ac, av), encode(ao, ac, av)
+
+
+# --- paragraph rendering (text + reference spans) ----------------------------
+def render_paragraph(p):
+    """Serialize a <p> to display text (whitespace collapsed, same as clean_ws)
+    while recording each resolvable <scripRef>'s span as char offsets into that
+    text. Returns (text, spans) where spans is a list of
+    (start, end, target_start_key, target_end_key)."""
+    out = []            # one char per entry; len(out) == current offset
+    pending = [False]   # a space is owed before the next non-space char
+    spans = []
+
+    def feed(text):
+        for ch in text:
+            if ch.isspace():
+                if out:
+                    pending[0] = True
+            else:
+                if pending[0]:
+                    out.append(" ")
+                    pending[0] = False
+                out.append(ch)
+
+    def walk(el):
+        if el.text:
+            feed(el.text)
+        for child in el:
+            if child.tag == "scripRef":
+                target = resolve_osis(child.get("osisRef", "") or "")
+                if pending[0] and out:          # settle owed space before the ref
+                    out.append(" ")
+                    pending[0] = False
+                start = len(out)
+                feed("".join(child.itertext()))
+                if target and len(out) > start:
+                    spans.append((start, len(out), target[0], target[1]))
+            else:
+                walk(child)
+            if child.tail:
+                feed(child.tail)
+
+    walk(p)
+    return "".join(out), spans
+
+
+# --- osisRef (commentary markers) --------------------------------------------
 def parse_chapter_verse(osis_ref):
     """START chapter/verse of an osisRef; the book code is ignored (see above).
     Verse is 0 for a whole-chapter ref like `Bible:Isa.1`."""
@@ -197,15 +291,16 @@ SKIP_PARA_CLASSES = {
 
 class Entry:
     __slots__ = ("usfm", "ordinal", "chapter", "start_verse", "heading",
-                 "body", "start_key", "end_key")
+                 "body", "xrefs", "start_key", "end_key")
 
-    def __init__(self, usfm, chapter, start_verse, heading, body):
+    def __init__(self, usfm, chapter, start_verse, heading, body, xrefs):
         self.usfm = usfm
         self.ordinal = ORDINAL[usfm]
         self.chapter = chapter
         self.start_verse = start_verse
         self.heading = heading
         self.body = body
+        self.xrefs = xrefs  # (start, end, target_start_key, target_end_key), body offsets
         self.start_key = 0
         self.end_key = 0
 
@@ -233,17 +328,28 @@ def parse_thml(raw):
     start_verse = 0
     heading = None         # from a following <h3>/<h4>
     marker_passage = None  # the scripCom's own passage label (heading fallback)
-    paras = []
+    paras = []             # (text, spans) per prose paragraph
 
     def flush():
         nonlocal book, heading, marker_passage, paras
         if book is not None and paras:
+            # Join paragraphs with a blank line and shift each one's reference
+            # spans to their offset in the assembled body ("\n\n" == 2 chars).
+            body_parts = []
+            xrefs = []
+            pos = 0
+            for text, spans in paras:
+                for s, e, ts, te in spans:
+                    xrefs.append((pos + s, pos + e, ts, te))
+                body_parts.append(text)
+                pos += len(text) + 2
             entries.append(Entry(
                 usfm=book,
                 chapter=chapter,
                 start_verse=start_verse,
                 heading=heading or marker_passage,
-                body="\n\n".join(paras),
+                body="\n\n".join(body_parts),
+                xrefs=xrefs,
             ))
         book = None
         heading = None
@@ -298,7 +404,7 @@ def parse_thml(raw):
                 continue
             if el.get("class") in SKIP_PARA_CLASSES:
                 continue
-            text = clean_ws("".join(el.itertext()))
+            text, spans = render_paragraph(el)
             if not text:
                 continue
             # Prose with no preceding marker (a chapter whose scripCom is missing,
@@ -309,7 +415,7 @@ def parse_thml(raw):
                 book = current_book
                 chapter = current_chapter if current_chapter != 0 else 1
                 start_verse = 0
-            paras.append(text)
+            paras.append((text, spans))
 
     flush()
     resolve_coverage(entries)
@@ -378,6 +484,19 @@ def build_db(cfg, entries):
             );
             CREATE INDEX ix_entry_start ON entry(start_key);
             CREATE INDEX ix_entry_book_chapter ON entry(usfm, chapter);
+
+            -- A tappable scripture reference inside an entry's body: [start, end)
+            -- are char offsets into entry.body, and [target_start_key,
+            -- target_end_key] is the inclusive verse-key range it points at.
+            CREATE TABLE xref (
+              id               INTEGER PRIMARY KEY,
+              entry_id         INTEGER NOT NULL,
+              start            INTEGER NOT NULL,
+              end              INTEGER NOT NULL,
+              target_start_key INTEGER NOT NULL,
+              target_end_key   INTEGER NOT NULL
+            );
+            CREATE INDEX ix_xref_entry ON xref(entry_id);
             """
         )
 
@@ -417,6 +536,16 @@ def build_db(cfg, entries):
             ],
         )
 
+        db.executemany(
+            "INSERT INTO xref(entry_id, start, end, target_start_key, "
+            "target_end_key) VALUES (?, ?, ?, ?, ?)",
+            [
+                (i + 1, s, e_, ts, te)
+                for i, entry in enumerate(entries)
+                for (s, e_, ts, te) in entry.xrefs
+            ],
+        )
+
         # External-content FTS5 index over commentary body text, keyed to id.
         db.executescript(
             """
@@ -450,7 +579,8 @@ def main(argv):
             sys.exit(f"Missing input {rel}")
         with open(path, encoding="utf-8") as f:
             entries.extend(parse_thml(f.read()))
-    print(f"Parsed {len(entries)} commentary entries.")
+    xref_total = sum(len(e.xrefs) for e in entries)
+    print(f"Parsed {len(entries)} commentary entries, {xref_total} cross-references.")
 
     out = build_db(cfg, entries)
     kb = round(os.path.getsize(out) / 1024)

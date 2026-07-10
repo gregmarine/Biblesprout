@@ -120,3 +120,14 @@ app.*.symbols
 # IDE
 .idea/
 *.iml
+
+# --- Bundled scripture & commentary content (NOT tracked in git) --------------
+# The Bible/commentary source text and the built read-only .bible/.commentary
+# DBs are large and re-derivable, so they're kept out of the repo and restored
+# or rebuilt locally (see data/tools/). Re-download sources from:
+#   BSB USFM      https://bereanbible.com/bsb_usfm.zip
+#   commentaries  https://ccel.org (Matthew Henry, Jamieson-Fausset-Brown; ThML)
+/data/bible/
+/data/commentaries/
+/apps/biblesprout_flutter/assets/bible/
+/apps/biblesprout_flutter/assets/commentaries/

@@ -111,11 +111,13 @@ dependencies {
 val bundleContentDbs by tasks.registering(Copy::class) {
     description = "Copy prebuilt content databases from /data into app assets."
     from(rootProject.file("../../data/bible/bsb.bible"))
-    // Both Matthew Henry commentaries ship in the APK for now — the Concise (~6MB)
-    // and the six-volume Complete (~50MB). While the app is sideloaded-only the
-    // large DB is fine bundled; a downloadable-sources model is far off.
+    // Three commentaries ship in the APK for now — Matthew Henry's Concise (~6MB)
+    // and six-volume Complete (~50MB), and Jamieson-Fausset-Brown (~19MB). While
+    // the app is sideloaded-only the large DBs are fine bundled; a downloadable-
+    // sources model is far off.
     from(rootProject.file("../../data/commentaries/mhcc.commentary"))
     from(rootProject.file("../../data/commentaries/mhc.commentary"))
+    from(rootProject.file("../../data/commentaries/jfb.commentary"))
     into(layout.buildDirectory.dir("generated/contentAssets/content"))
 }
 tasks.named("preBuild") { dependsOn(bundleContentDbs) }

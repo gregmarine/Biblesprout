@@ -14,6 +14,7 @@ import androidx.lifecycle.lifecycleScope
 import com.symmetricalpalmtree.biblesprout.MainActivity
 import com.symmetricalpalmtree.biblesprout.R
 import com.symmetricalpalmtree.biblesprout.data.AppServices
+import com.symmetricalpalmtree.biblesprout.data.BibleWord
 import com.symmetricalpalmtree.biblesprout.data.Canon
 import com.symmetricalpalmtree.biblesprout.data.VerseKey
 import com.symmetricalpalmtree.biblesprout.data.VerseRange
@@ -30,6 +31,7 @@ import com.symmetricalpalmtree.biblesprout.reader.NumberAtom
 import com.symmetricalpalmtree.biblesprout.reader.ReaderPage
 import com.symmetricalpalmtree.biblesprout.reader.ReaderTypography
 import com.symmetricalpalmtree.biblesprout.reader.WordAtom
+import com.symmetricalpalmtree.biblesprout.reader.WordPopup
 import com.symmetricalpalmtree.biblesprout.reader.WordRef
 import android.text.StaticLayout
 import android.view.View
@@ -76,6 +78,11 @@ class ReaderActivity : AppCompatActivity() {
     // The current chapter's footnote-body cross-references, grouped by footnote id, so
     // a reference cited in a footnote is tappable in its popup.
     private var noteXrefs: Map<Int, List<com.symmetricalpalmtree.biblesprout.data.Xref>> = emptyMap()
+
+    // The current chapter's original-language words (the .bible word layer), grouped by
+    // block id and sorted by their span, so a long-press resolves to the Hebrew/Greek
+    // behind the pressed English. Empty on a pre-v3 `.bible` without the word layer.
+    private var originalsByBlock: Map<Int, List<BibleWord>> = emptyMap()
 
     // Highlights: the current chapter's saved highlights, the per-page word seed
     // (verse + word count carried into each page), and the in-progress selection.
@@ -583,17 +590,49 @@ class ReaderActivity : AppCompatActivity() {
         startActivity(PassageActivity.intent(this, startKey, endKey))
     }
 
-    /** Opens commentary anchored to the verse under a long-press, if any. */
-    private fun openVerseCommentary(x: Float, y: Float) {
-        val body = currentBody ?: return
-        if (pages.isEmpty()) return
+    /** The character offset in the drawn page body under (x, y), or null if outside it. */
+    private fun bodyOffsetAt(x: Float, y: Float): Int? {
+        val body = currentBody ?: return null
+        if (pages.isEmpty()) return null
         val localX = (x - binding.reader.horizontalPad).toInt()
         val localY = (y - binding.reader.verticalPad - bodyTopPx).toInt()
-        if (localY < 0 || localY > body.height) return
+        if (localY < 0 || localY > body.height) return null
         val line = body.getLineForVertical(localY)
-        val offset = body.getOffsetForHorizontal(line, localX.toFloat())
-        val key = typo.verseKeyAtOffset(pages[page], offset) ?: return
-        CommentaryLauncher.openVerse(this, key)
+        return body.getOffsetForHorizontal(line, localX.toFloat())
+    }
+
+    /**
+     * Opens word study for the word under a long-press: the original-language word
+     * behind it, its parsing, and its Strong's entry. Does nothing when the press
+     * lands on whitespace, a heading or a verse number — guessing at a neighbouring
+     * word would open a panel about a word the reader wasn't pressing.
+     */
+    private fun openWordStudy(x: Float, y: Float) {
+        val offset = bodyOffsetAt(x, y) ?: return
+        val atom = typo.wordAtomAtOffset(pages[page], offset) ?: return
+        if (!atom.hasSource) return
+        // The word layer's span covers the whole English a single original word became
+        // ("In the beginning"), so the pressed word is the one whose span contains it.
+        val word = originalsByBlock[atom.blockId]
+            ?.firstOrNull { atom.blockStart >= it.start && atom.blockStart < it.end }
+            ?: return
+
+        lifecycleScope.launch {
+            val entry = word.strongs?.let { s ->
+                withContext(Dispatchers.IO) { AppServices.lexicon?.entryFor(s) }
+            }
+            WordPopup.show(
+                activity = this@ReaderActivity,
+                word = word,
+                entry = entry,
+                // Only offer commentary when one is installed, matching the toolbar.
+                onCommentary = if (AppServices.commentaries.isEmpty()) {
+                    null
+                } else {
+                    { CommentaryLauncher.openVerse(this@ReaderActivity, word.verseKey) }
+                },
+            )
+        }
     }
 
     // --- Navigation -----------------------------------------------------------
@@ -673,8 +712,12 @@ class ReaderActivity : AppCompatActivity() {
             val xrefs = withContext(Dispatchers.IO) {
                 AppServices.bibleDb.xrefsForChapter(usfm, chapter.number)
             }
+            val originals = withContext(Dispatchers.IO) {
+                AppServices.bibleDb.wordsForChapter(usfm, chapter.number)
+            }
             chapterFootnotes = footnotes.associateBy { it.id }
             noteXrefs = xrefs.filter { it.sourceKind == "note" }.groupBy { it.sourceId }
+            originalsByBlock = originals.groupBy { it.blockId }
             val packed = withContext(Dispatchers.Default) {
                 val atoms = ChapterPaginator.atomsForBlocks(blocks, footnotes, xrefs)
                 val headingHeight = typo.headingHeight(book.name, chapter.number, width)
@@ -767,10 +810,12 @@ class ReaderActivity : AppCompatActivity() {
             }
 
             override fun onLongPress(e: MotionEvent) {
-                // The superscript number is too small a tap target on e-ink, and
-                // tap/swipe already turn pages — so a long-press opens commentary
-                // for the pressed verse. (Suspended in highlight mode.)
-                if (!highlightMode) openVerseCommentary(e.x, e.y)
+                // Tap/swipe already turn pages, so a long-press is the reader's spare
+                // gesture: it opens word study for the pressed word. Verse commentary
+                // isn't lost — a word sits inside a verse, so the panel offers it as an
+                // action (and the toolbar still opens the whole chapter's commentary).
+                // (Suspended in highlight mode.)
+                if (!highlightMode) openWordStudy(e.x, e.y)
             }
 
             override fun onFling(

@@ -88,7 +88,20 @@ object ChapterPaginator {
             )
             var j = i
             while (j < bound && content[j] != ' ') j++
-            if (j > i) { out.add(WordAtom(content.substring(i, j))); i = j } else i++
+            if (j > i) {
+                // Carry the word's own block span: the word layer is addressed by it.
+                out.add(
+                    WordAtom(
+                        word = content.substring(i, j),
+                        blockId = block.id,
+                        blockStart = i,
+                        blockEnd = j,
+                    ),
+                )
+                i = j
+            } else {
+                i++
+            }
         }
         // A caller anchored at the very end of the block's content.
         while (ni < callers.size && callers[ni].offset >= content.length) {

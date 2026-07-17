@@ -40,7 +40,7 @@ android {
     // Ship the prebuilt content DBs uncompressed so SQLite can open the copied
     // file directly (and a future mmap path stays open).
     androidResources {
-        noCompress += setOf("bible", "commentary")
+        noCompress += setOf("bible", "commentary", "lexicon")
     }
 
     packaging {
@@ -118,6 +118,8 @@ val bundleContentDbs by tasks.registering(Copy::class) {
     from(rootProject.file("../../data/commentaries/mhcc.commentary"))
     from(rootProject.file("../../data/commentaries/mhc.commentary"))
     from(rootProject.file("../../data/commentaries/jfb.commentary"))
+    // Strong's Hebrew & Greek dictionaries (~2.6MB), for word study.
+    from(rootProject.file("../../data/lexicons/strongs.lexicon"))
     into(layout.buildDirectory.dir("generated/contentAssets/content"))
 }
 tasks.named("preBuild") { dependsOn(bundleContentDbs) }

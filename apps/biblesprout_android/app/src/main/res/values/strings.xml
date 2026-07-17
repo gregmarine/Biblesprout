@@ -40,6 +40,16 @@
     <!-- %1$s = commentary abbreviation, %2$s = reference (e.g. "MHCC · John 3") -->
     <string name="commentary_title">%1$s · %2$s</string>
 
+    <!-- Word study (long-press a word) -->
+    <string name="word_parsing">PARSING</string>
+    <string name="word_root">ROOT</string>
+    <string name="word_definition">DEFINITION</string>
+    <string name="word_derivation">DERIVATION</string>
+    <string name="word_kjv_usage">KJV USAGE</string>
+    <string name="word_strongs">STRONG\'S</string>
+    <string name="word_no_lexicon">No dictionary is installed for this word.</string>
+    <string name="commentary_on_verse">Commentary on this verse</string>
+
     <!-- Bookmarks -->
     <string name="bookmarks">Bookmarks</string>
     <string name="add_bookmark">Bookmark this place</string>

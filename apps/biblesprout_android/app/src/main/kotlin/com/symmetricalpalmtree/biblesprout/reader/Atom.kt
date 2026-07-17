@@ -19,13 +19,24 @@ data class NumberAtom(val number: Int, val verseKey: Int) : Atom
  * scripture-reference span carries that reference's target verse-key range
  * ([linkStartKey] >= 0), so it renders underlined and taps navigate to it; Bible
  * body words leave it unset.
+ *
+ * Scripture words also remember where they came from — block [blockId], chars
+ * [blockStart] until [blockEnd] — which is the address the word layer is keyed by,
+ * so a long-press resolves to the original-language word behind this English.
+ * Unset (-1) for commentary words and for text with no block behind it.
  */
 data class WordAtom(
     val word: String,
     val linkStartKey: Int = -1,
     val linkEndKey: Int = -1,
+    val blockId: Int = -1,
+    val blockStart: Int = -1,
+    val blockEnd: Int = -1,
 ) : Atom {
     val isLink: Boolean get() = linkStartKey >= 0
+
+    /** Whether this word can be traced back to the word layer. */
+    val hasSource: Boolean get() = blockId >= 0
 }
 
 /**

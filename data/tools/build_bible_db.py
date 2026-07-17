@@ -35,6 +35,7 @@ Android's StaticLayout can turn them straight into spans:
 markers, footnote text, heading text or cross-reference labels.
 """
 
+import csv
 import os
 import re
 import sqlite3
@@ -44,9 +45,11 @@ import sys
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.abspath(os.path.join(HERE, os.pardir, os.pardir))
 USFM_DIR = os.path.join(ROOT, "data", "bible", "bsb_usfm")
+TABLES_PATH = os.path.join(ROOT, "data", "bible", "bsb_tables.tsv")
 OUT_PATH = os.path.join(ROOT, "data", "bible", "bsb.bible")
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 SOURCE_URL = "https://bereanbible.com/bsb_usfm.zip"
+TABLES_URL = "https://bereanbible.com/bsb_tables.tsv"
 
 # --- canon (mirrors apps/.../data/Canon.kt) ---------------------------------
 # (usfm, ordinal, name, testament). Names/ordinals must agree with Canon.kt so
@@ -105,6 +108,11 @@ def encode(ordinal, chapter, verse):
 # are excluded.
 BODY_KINDS = {"p", "pmo", "pc", "pi", "pm", "mi", "nb", "q1", "q2", "q3",
               "qr", "qc", "li1", "li2", "li3"}
+# Kinds the word layer aligns against. A psalm superscription (`\d \v 1 A Psalm
+# of David...`) is verse 1 in the original and the translation tables gloss it,
+# but it is kept out of BODY_KINDS so it never reaches verse.text or FTS. It
+# still gets words, so its Hebrew is tappable like any other line.
+WORD_KINDS = BODY_KINDS | {"d"}
 # Markers that open a new display block (paragraph / poetry / heading / break).
 PARAGRAPH_KINDS = BODY_KINDS | {"b", "d", "qa", "s1", "s2", "s3", "ms", "ms1",
                                 "mr", "r", "sp", "sr"}
@@ -121,17 +129,107 @@ def clean_ws(s):
 
 
 # Fix stray typographic spacing that exists in the USFM source (e.g. "Moreover ,
-# the" in 1 Kings 14:14, "( who"). Applied only to the clean verse.text column,
-# which carries no character offsets. "." is excluded so the intentional "· · ·"
+# the" in 1 Kings 14:14, "( who"). "." is excluded so the intentional "· · ·"
 # ellipses (e.g. Numbers 26) are preserved.
+#
+# Applied to each text run *before* it is appended to a block, so every offset
+# (verse markers, footnote callers, xref and word spans) is taken against the
+# fixed text and stays consistent by construction. It runs again over the joined
+# verse.text, which also catches the few cases that straddle a run boundary.
 _space_before = re.compile(r"(?<=\S)\s+([,;:?!”’)\]])")
 _space_after = re.compile(r"([(“‘\[])\s+(?=\S)")
 
 
-def _typo(s):
+def fix_spacing(s):
     s = _space_before.sub(r"\1", s)
     s = _space_after.sub(r"\1", s)
     return s
+
+
+# --- word layer (BSB translation tables) ------------------------------------
+# The tables are a word-level reverse interlinear for the whole BSB: one row per
+# original-language word, carrying its Strong's number, transliteration and
+# morphology, plus the English it was rendered as and that English's position in
+# the verse ("BSB Sort"). Aligning those glosses back onto the display blocks is
+# what makes a word tappable in the reader.
+#
+# Column indices in bsb_tables.tsv (header row is descriptive, not machine-read):
+_T_BSB_SORT = 2
+_T_LANGUAGE = 4
+_T_LEMMA = 5
+_T_TRANSLIT = 7
+_T_MORPH_CODE = 8
+_T_MORPH_TEXT = 9
+_T_STRONGS_H = 10
+_T_STRONGS_G = 11
+_T_VERSE_ID = 12
+_T_ENGLISH = 18
+_T_MIN_COLS = 19
+
+# Bracket families the tables use to mark supplied or variant words. The brackets
+# are markup — the words inside them are real BSB text, so only the brackets go.
+_brackets = re.compile(r"[\[\]{}⧼⧽‹›〈〉]")
+# `vvv` is the same spurious-text artifact _preclean strips from the USFM.
+_vvv = re.compile(r"\bvvv\b")
+_word_re = re.compile(r"[\w']+")
+
+# The table labels Psalms "Psalm"; every other book label matches Canon's name.
+_TABLE_BOOK_ALIASES = {"Psalm": "Psalms"}
+
+
+def _gloss_tokens(text):
+    """The English word tokens one table row contributes, in reading order."""
+    t = _vvv.sub(" ", _brackets.sub(" ", text)).replace(". . .", " ")
+    return _word_re.findall(t)
+
+
+def _norm_word(w):
+    return w.replace("’", "'").replace("‘", "'").lower()
+
+
+def load_tables(path):
+    """Parse bsb_tables.tsv into {verse label -> [word dicts]}, in English order.
+
+    `VerseId` is stamped only on each verse's first row, so it is forward-filled.
+    Rows with neither a Strong's number nor an original-language lemma are the
+    export's padding and are dropped.
+    """
+    by_verse = {}
+    current = None
+    with open(path, encoding="utf-8-sig") as fh:
+        reader = csv.reader(fh, delimiter="\t")
+        next(reader, None)
+        for row in reader:
+            if len(row) < _T_MIN_COLS:
+                continue
+            label = row[_T_VERSE_ID].strip()
+            if label:
+                book, _, ref = label.rpartition(" ")
+                current = f"{_TABLE_BOOK_ALIASES.get(book, book)} {ref}"
+            if current is None:
+                continue
+            heb, grk = row[_T_STRONGS_H].strip(), row[_T_STRONGS_G].strip()
+            strongs = f"H{heb}" if heb else (f"G{grk}" if grk else None)
+            lemma = row[_T_LEMMA].strip()
+            if not strongs and not lemma:
+                continue
+            try:
+                sort = int(row[_T_BSB_SORT])
+            except ValueError:
+                continue
+            by_verse.setdefault(current, []).append({
+                "sort": sort,
+                "english": row[_T_ENGLISH],
+                "strongs": strongs,
+                "lemma": lemma,
+                "translit": row[_T_TRANSLIT].strip() or None,
+                "language": row[_T_LANGUAGE].strip() or None,
+                "morph_code": row[_T_MORPH_CODE].strip() or None,
+                "morph_text": row[_T_MORPH_TEXT].strip() or None,
+            })
+    for words in by_verse.values():
+        words.sort(key=lambda w: w["sort"])
+    return by_verse
 
 
 class Builder:
@@ -145,6 +243,9 @@ class Builder:
         self.redletters = []      # (block_idx, start, end)
         self.footnotes = []       # dict: block_idx, offset, verse_key, label, text
         self.xrefs = []           # dict: source_kind, source_ref, start, end, ts, te
+        self.words = []           # dict: verse_key, sort, span, strongs, lemma, ...
+        self.untranslated = 0     # original words the BSB renders with no English
+        self.unmatched = 0        # glosses the aligner could not place (should be ~0)
         self.warnings = []
 
     # Known artifacts in bereanbible.com's USFM export that corrupt the reading
@@ -156,6 +257,9 @@ class Builder:
         text = text.replace("( vvv ", "(")   # LUK 9:33  "( vvv He" -> "(He"
         text = text.replace("(vvv ", "(")    # ACT 4:36  "(vvv meaning" -> "(meaning"
         text = text.replace(" vvv ", " ")    # GEN 35:18 "named vvv him" -> "named him"
+        # JER 22:24 glues two words in the export ("evenif you, Coniah"); the
+        # plain-text edition and the translation tables both read "even if".
+        text = text.replace("evenif ", "even if ")
         # 2 places (JDG 16:14, JOL 2:9) glue a footnote caller straight onto the
         # next word ("web.\\f*Then"); give the caller its normal trailing space.
         text = re.sub(r"(\\f\*)([A-Za-z(])", r"\1 \2", text)
@@ -225,6 +329,10 @@ class Builder:
         """Scan a text run, appending display text to the current block and
         recording verse-number, red-letter, footnote and cross-reference markers.
         Updates state['verse_key'] as \\v markers are crossed."""
+        # Fix the export's stray spacing up front: every offset below is taken
+        # against this string, so the display blocks read like the plain text
+        # instead of showing "Likewise , every" where the source has a stray space.
+        run = fix_spacing(run)
         block_idx = state["block"]
         chapter = state["chapter"]
         block = self.blocks[block_idx]
@@ -244,6 +352,10 @@ class Builder:
                     # paragraphs (e.g. a poetry line continued on the next line)
                     # is rejoined with a space at the block boundary.
                     self.verses[vk]["parts"].append((block_idx, s))
+                if is_body or block["kind"] in WORD_KINDS:
+                    # The word layer needs the offset each fragment landed at, to
+                    # map a gloss back to its (block_id, start, end) span.
+                    self.verses[vk]["wparts"].append((block_idx, start, s))
             return start
 
         while i < n:
@@ -463,11 +575,89 @@ class Builder:
         self.warnings.append(f"xref: unparseable target {target!r}")
         return None
 
+    # ---- word layer --------------------------------------------------------
+    def align_words(self, tables):
+        """Map each table row's English gloss onto a (block_id, start, end) span.
+
+        Walks the verse's display text and its table rows in parallel — both are
+        in English reading order — consuming one gloss at a time. A row whose
+        gloss is untranslated (the direct-object marker, an artifact, an ellipsis)
+        contributes no tokens and so takes no span, but is still recorded: it is a
+        real original-language word, and an interlinear view will want it.
+        """
+        for key in self.verse_order:
+            v = self.verses[key]
+            label = f"{NAME[v['usfm']]} {v['chapter']}:{v['verse']}"
+            rows = tables.get(label)
+            if not rows:
+                self.warnings.append(f"word layer: no table rows for {label}")
+                continue
+
+            tokens = self._verse_tokens(v["wparts"])
+            cursor = 0
+            for row in rows:
+                glosses = [_norm_word(g) for g in _gloss_tokens(row["english"])]
+                span = None
+                if glosses:
+                    span, cursor = self._match(tokens, cursor, glosses, label)
+                    if span is None:
+                        self.unmatched += 1
+                else:
+                    self.untranslated += 1
+                self.words.append({
+                    "verse_key": key,
+                    "sort": row["sort"],
+                    "span": span,
+                    "strongs": row["strongs"],
+                    "lemma": row["lemma"],
+                    "translit": row["translit"],
+                    "language": row["language"],
+                    "morph_code": row["morph_code"],
+                    "morph_text": row["morph_text"],
+                })
+
+    def _verse_tokens(self, parts):
+        """The verse's display words as (norm, block_idx, start, end).
+
+        Tokenised per fragment, so every span stays inside one block and maps
+        straight onto that block's `content` offsets.
+        """
+        tokens = []
+        for block_idx, offset, s in parts:
+            for m in _word_re.finditer(s):
+                tokens.append((_norm_word(m.group()), block_idx,
+                               offset + m.start(), offset + m.end()))
+        return tokens
+
+    # How far ahead of the cursor to look for a gloss before giving up on it.
+    # The streams agree almost everywhere; the slack absorbs the handful of
+    # verses where the 3rd printing reworded what the tables recorded.
+    _LOOKAHEAD = 8
+
+    def _match(self, tokens, cursor, glosses, label):
+        """Find `glosses` at/after `cursor`; return ((block, start, end), cursor)."""
+        limit = min(len(tokens), cursor + self._LOOKAHEAD)
+        for begin in range(cursor, limit):
+            end = begin + len(glosses)
+            if end > len(tokens):
+                break
+            if all(tokens[begin + i][0] == g for i, g in enumerate(glosses)):
+                first, last = tokens[begin], tokens[end - 1]
+                # A gloss that straddles a paragraph break can't be one span;
+                # anchor it to the fragment it starts in.
+                if first[1] != last[1]:
+                    return (first[1], first[2], first[3]), end
+                return (first[1], first[2], last[3]), end
+        self.warnings.append(f"word layer: unmatched gloss in {label}")
+        return None, cursor
+
     # ---- verse table -------------------------------------------------------
     def _ensure_verse(self, key, usfm, chapter, number):
         if key not in self.verses:
             self.verses[key] = {
-                "usfm": usfm, "chapter": chapter, "verse": number, "parts": [],
+                "usfm": usfm, "chapter": chapter, "verse": number,
+                "parts": [],   # (block_idx, text)         -> verse.text / FTS
+                "wparts": [],  # (block_idx, offset, text) -> word layer spans
             }
             self.verse_order.append(key)
 
@@ -482,6 +672,7 @@ class Builder:
             self._write_books(db)
             self._write_verses(db)
             self._write_blocks(db)
+            self._write_words(db)
             self._write_fts(db)
             db.commit()
             db.execute("VACUUM")
@@ -526,7 +717,7 @@ class Builder:
                     buf.append(" ")
                 buf.append(s)
                 prev_block = block_idx
-            text = _typo(clean_ws("".join(buf)))
+            text = fix_spacing(clean_ws("".join(buf)))
             rows.append((key, v["usfm"], v["chapter"], v["verse"], text))
         db.executemany(
             "INSERT INTO verse(verse_key, usfm, chapter, verse, text) "
@@ -571,6 +762,40 @@ class Builder:
             "INSERT INTO xref(source_kind, source_id, start, end, "
             "target_start_key, target_end_key) VALUES (?, ?, ?, ?, ?, ?)",
             xref_rows)
+
+    def _write_words(self, db):
+        # Intern the two repetitive value groups, then reference them by id.
+        morphs, forms = {}, {}
+
+        def intern(table, key):
+            if key not in table:
+                table[key] = len(table) + 1
+            return table[key]
+
+        rows = []
+        for i, w in enumerate(self.words):
+            block_idx, start, end = w["span"] if w["span"] else (None, None, None)
+            morph_id = None
+            if w["morph_code"] or w["morph_text"]:
+                morph_id = intern(morphs, (w["morph_code"] or "", w["morph_text"] or ""))
+            form_id = None
+            if w["lemma"]:
+                form_id = intern(forms, (w["lemma"], w["translit"], w["language"]))
+            rows.append((
+                i + 1, w["verse_key"], w["sort"],
+                None if block_idx is None else block_idx + 1, start, end,
+                w["strongs"], form_id, morph_id,
+            ))
+
+        db.executemany(
+            "INSERT INTO morphology(id, code, text) VALUES (?, ?, ?)",
+            [(i, code, text) for (code, text), i in morphs.items()])
+        db.executemany(
+            "INSERT INTO form(id, original, translit, language) VALUES (?, ?, ?, ?)",
+            [(i, orig, tr, lang) for (orig, tr, lang), i in forms.items()])
+        db.executemany(
+            "INSERT INTO word(id, verse_key, sort, block_id, start, end, strongs, "
+            "form_id, morph_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", rows)
 
     def _write_fts(self, db):
         db.executescript("""
@@ -648,6 +873,41 @@ CREATE TABLE xref (
 );
 CREATE INDEX xref_source ON xref(source_kind, source_id);
 
+-- The parsing of an original-language word. Only ~3.8k distinct parsings exist
+-- across ~444k words (each repeats ~115x), so they are stored once and shared.
+CREATE TABLE morphology (
+  id   INTEGER PRIMARY KEY,
+  code TEXT NOT NULL,              -- 'V-Qal-Perf-3ms'
+  text TEXT NOT NULL               -- 'Verb - Qal - Perfect - third person masculine singular'
+);
+
+-- An inflected original-language form and its transliteration. Shared for the
+-- same reason: the same surface form recurs throughout the text.
+CREATE TABLE form (
+  id       INTEGER PRIMARY KEY,
+  original TEXT NOT NULL,          -- 'בְּרֵאשִׁ֖ית' / 'Βίβλος'
+  translit TEXT,                   -- 'bə·rê·šîṯ' / 'Biblos'
+  language TEXT                    -- 'Hebrew' | 'Aramaic' | 'Greek'
+);
+
+CREATE TABLE word (
+  id        INTEGER PRIMARY KEY,
+  verse_key INTEGER NOT NULL,
+  sort      INTEGER NOT NULL,      -- position in the verse's English word order
+  block_id  INTEGER,               -- NULL when the word has no English rendering
+  start     INTEGER,
+  end       INTEGER,
+  strongs   TEXT,                  -- 'H7225' | 'G976'
+  form_id   INTEGER REFERENCES form(id),
+  morph_id  INTEGER REFERENCES morphology(id)
+);
+-- Hit-testing a long-press: the words drawn in a block, in offset order.
+CREATE INDEX word_block ON word(block_id, start);
+-- A verse's original-language words in order (interlinear view).
+CREATE INDEX word_verse ON word(verse_key, sort);
+-- Reverse concordance: every occurrence of a Strong's number.
+CREATE INDEX word_strongs ON word(strongs);
+
 CREATE VIRTUAL TABLE verse_fts USING fts5(
   text,
   content='verse',
@@ -659,6 +919,9 @@ CREATE VIRTUAL TABLE verse_fts USING fts5(
 def main():
     if not os.path.isdir(USFM_DIR):
         sys.exit(f"Missing USFM source dir: {USFM_DIR}")
+    if not os.path.exists(TABLES_PATH):
+        sys.exit(f"Missing translation tables: {TABLES_PATH}\n"
+                 f"Download from {TABLES_URL} (public domain).")
 
     b = Builder()
     for usfm, ordinal, name, testament in CANON:
@@ -678,11 +941,19 @@ def main():
     if astral:
         b.warnings.append(f"{astral} astral (non-BMP) chars — offsets may desync on device")
 
+    b.align_words(load_tables(TABLES_PATH))
     b.write(OUT_PATH)
 
     kb = round(os.path.getsize(OUT_PATH) / 1024)
     print(f"Parsed {len(b.verse_order)} verses, {len(b.blocks)} blocks, "
           f"{len(b.footnotes)} footnotes, {len(b.xrefs)} cross-references.")
+    # Only glossed words can carry a span: an untranslated original (the Hebrew
+    # direct-object marker, say) is stored for the interlinear but is untappable.
+    placed = sum(1 for w in b.words if w["span"])
+    glossed = len(b.words) - b.untranslated
+    print(f"Word layer: {len(b.words)} words — {placed}/{glossed} glossed words "
+          f"placed ({100 * placed / max(1, glossed):.2f}%), "
+          f"{b.untranslated} untranslated, {b.unmatched} unplaced.")
     print(f"Wrote {OUT_PATH} ({kb}KB).")
     if b.warnings:
         from collections import Counter

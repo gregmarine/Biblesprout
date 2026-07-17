@@ -35,6 +35,14 @@ object AppServices {
     lateinit var commentaryPrefs: CommentaryPreferences
         private set
 
+    /**
+     * The Strong's lexicon, opened read-only, or null if it isn't installed — word
+     * study then shows the form and parsing the `.bible` word layer already carries,
+     * just without a dictionary entry.
+     */
+    var lexicon: LexiconDatabase? = null
+        private set
+
     @Volatile
     private var ready = false
     private val mutex = Mutex()
@@ -57,6 +65,8 @@ object AppServices {
                 commentaries = installCommentaries(installer)
                 commentaries.forEach { registerCommentarySource(it) }
                 commentaryPrefs = CommentaryPreferences.load(index.settings())
+
+                lexicon = installLexicon(installer)
             }
             ready = true
         }
@@ -76,6 +86,18 @@ object AppServices {
             } catch (_: Exception) {
                 null
             }
+        }
+
+    /**
+     * Installs and opens the bundled Strong's lexicon. A missing or unreadable file
+     * is skipped so word study still shows the form/parsing from the word layer.
+     */
+    private fun installLexicon(installer: ContentInstaller): LexiconDatabase? =
+        try {
+            val file = installer.ensureInstalled("content/$BUNDLED_LEXICON", BUNDLED_LEXICON)
+            LexiconDatabase.openFile(file.absolutePath)
+        } catch (_: Exception) {
+            null
         }
 
     /** Records a commentary in the source registry (idempotent). */
@@ -117,4 +139,7 @@ object AppServices {
     // Concise first so it's the default order; all three are bundled for now.
     private val BUNDLED_COMMENTARIES =
         listOf("mhcc.commentary", "mhc.commentary", "jfb.commentary")
+
+    // Strong's Hebrew & Greek dictionaries (~2.6MB) — small enough to always bundle.
+    private const val BUNDLED_LEXICON = "strongs.lexicon"
 }

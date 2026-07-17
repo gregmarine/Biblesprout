@@ -15,12 +15,13 @@ import androidx.core.view.doOnLayout
 import androidx.lifecycle.lifecycleScope
 import com.symmetricalpalmtree.biblesprout.R
 import com.symmetricalpalmtree.biblesprout.data.AppServices
+import com.symmetricalpalmtree.biblesprout.data.BibleWord
 import com.symmetricalpalmtree.biblesprout.data.Canon
 import com.symmetricalpalmtree.biblesprout.data.Passage
 import com.symmetricalpalmtree.biblesprout.data.ReferenceParser
-import com.symmetricalpalmtree.biblesprout.data.VerseHit
 import com.symmetricalpalmtree.biblesprout.data.VerseKey
 import com.symmetricalpalmtree.biblesprout.data.VerseRange
+import com.symmetricalpalmtree.biblesprout.data.VerseSlice
 import com.symmetricalpalmtree.biblesprout.databinding.ActivityPassageBinding
 import com.symmetricalpalmtree.biblesprout.reader.Atom
 import com.symmetricalpalmtree.biblesprout.reader.CommentaryLauncher
@@ -32,6 +33,7 @@ import com.symmetricalpalmtree.biblesprout.reader.PassagePaginator
 import com.symmetricalpalmtree.biblesprout.reader.ReaderTypography
 import com.symmetricalpalmtree.biblesprout.reader.TextItem
 import com.symmetricalpalmtree.biblesprout.reader.WordAtom
+import com.symmetricalpalmtree.biblesprout.reader.WordPopup
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
@@ -60,6 +62,10 @@ class PassageActivity : AppCompatActivity() {
 
     // The current page's drawn elements, parallel to pages[page], for hit-testing.
     private var currentElements: List<FlowElement> = emptyList()
+
+    // The passage's original-language words grouped by block id, so a long-press
+    // resolves to the Hebrew/Greek behind the pressed English (as in the reader).
+    private var originalsByBlock: Map<Int, List<BibleWord>> = emptyMap()
 
     private val safetyPad by lazy { typo.dp(8f) }
     private val headingTopPad by lazy { typo.dp(18f) }
@@ -97,10 +103,17 @@ class PassageActivity : AppCompatActivity() {
             binding.title.text = passages.joinToString("; ") { it.format() }
             binding.notes.visibility =
                 if (AppServices.commentaries.isNotEmpty()) View.VISIBLE else View.GONE
-            val verses = withContext(Dispatchers.IO) {
-                passages.flatMap { AppServices.bibleDb.versesForRanges(it.ranges) }
+            val slices = withContext(Dispatchers.IO) {
+                passages.flatMap { p ->
+                    p.ranges.flatMap { AppServices.bibleDb.verseSlicesForRange(it.startKey, it.endKey) }
+                }
             }
-            blocks = buildBlocks(verses)
+            originalsByBlock = withContext(Dispatchers.IO) {
+                passages.flatMap { p ->
+                    p.ranges.flatMap { AppServices.bibleDb.wordsForRange(it.startKey, it.endKey) }
+                }.groupBy { it.blockId }
+            }
+            blocks = buildBlocks(slices)
             binding.flow.doOnLayout { repaginate() }
         }
     }
@@ -140,8 +153,12 @@ class PassageActivity : AppCompatActivity() {
         startActivity(NoteActivity.intent(this, lo, hi, binding.title.text.toString()))
     }
 
-    /** Opens commentary anchored to the verse under a long-press, if any. */
-    private fun openVerseCommentary(x: Float, y: Float) {
+    /**
+     * Opens word study for the word under a long-press — the same gesture, panel and
+     * "Commentary on this verse" action as the reader. Does nothing when the press
+     * lands on a heading, a verse number or whitespace.
+     */
+    private fun openWordStudy(x: Float, y: Float) {
         if (pages.isEmpty()) return
         val items = pages[page]
         val localX = (x - binding.flow.horizontalPad).toInt()
@@ -152,22 +169,49 @@ class PassageActivity : AppCompatActivity() {
             top += element.topPad
             val h = element.layout.height
             if (localY in top..(top + h)) {
-                val item = items.getOrNull(i)
-                if (item is TextItem) {
-                    val line = element.layout.getLineForVertical(localY - top)
-                    val offset = element.layout.getOffsetForHorizontal(line, localX.toFloat())
-                    typo.verseKeyAtOffset(item.atoms, offset)?.let {
-                        CommentaryLauncher.openVerse(this, it)
-                    }
-                }
+                val item = items.getOrNull(i) as? TextItem ?: return
+                val line = element.layout.getLineForVertical(localY - top)
+                val offset = element.layout.getOffsetForHorizontal(line, localX.toFloat())
+                val atom = typo.wordAtomAtOffset(item.atoms, offset) ?: return
+                if (!atom.hasSource) return
+                val word = originalsByBlock[atom.blockId]
+                    ?.firstOrNull { atom.blockStart >= it.start && atom.blockStart < it.end }
+                    ?: return
+                showWordStudy(word)
                 return
             }
             top += h + element.bottomPad
         }
     }
 
-    /** Groups verses into heading + text blocks, a new heading per book/chapter. */
-    private fun buildBlocks(verses: List<VerseHit>): List<PassageItem> {
+    private fun showWordStudy(word: BibleWord) {
+        lifecycleScope.launch {
+            val entry = word.strongs?.let { s ->
+                withContext(Dispatchers.IO) { AppServices.lexicon?.entryFor(s) }
+            }
+            WordPopup.show(
+                activity = this@PassageActivity,
+                word = word,
+                entry = entry,
+                onCommentary = if (AppServices.commentaries.isEmpty()) {
+                    null
+                } else {
+                    { CommentaryLauncher.openVerse(this@PassageActivity, word.verseKey) }
+                },
+            )
+        }
+    }
+
+    /**
+     * Groups verses into heading + text blocks, a new heading per book/chapter.
+     *
+     * Words are tokenized out of each verse's block [VerseSpan]s rather than out of
+     * flat text, so every [WordAtom] carries the block address a long-press needs to
+     * reach the word layer. The rendering is unchanged: the passage view still flows
+     * as prose (no poetry indent), and a span's text is the same text `verse.text`
+     * holds.
+     */
+    private fun buildBlocks(slices: List<VerseSlice>): List<PassageItem> {
         val blocks = ArrayList<PassageItem>()
         var currentKey: String? = null
         var atoms = ArrayList<Atom>()
@@ -177,17 +221,34 @@ class PassageActivity : AppCompatActivity() {
                 atoms = ArrayList()
             }
         }
-        for (v in verses) {
-            val key = "${v.usfm}.${v.chapter}"
+        for (slice in slices) {
+            val ordinal = VerseKey.ordinalOf(slice.verseKey)
+            val book = Canon.byOrdinal(ordinal)
+            val chapter = VerseKey.chapterOf(slice.verseKey)
+            val key = "${book.usfm}.$chapter"
             if (key != currentKey) {
                 flush()
-                blocks.add(HeadingItem("${Canon.byUsfm(v.usfm).name} ${v.chapter}"))
+                blocks.add(HeadingItem("${book.name} $chapter"))
                 currentKey = key
             }
-            val ordinal = Canon.byUsfm(v.usfm).ordinal
-            atoms.add(NumberAtom(v.verse, VerseKey.encode(ordinal, v.chapter, v.verse)))
-            for (word in v.text.split(Regex("\\s+"))) {
-                if (word.isNotEmpty()) atoms.add(WordAtom(word))
+            atoms.add(NumberAtom(VerseKey.verseOf(slice.verseKey), slice.verseKey))
+            for (span in slice.spans) {
+                var i = 0
+                val text = span.text
+                while (i < text.length) {
+                    if (text[i] == ' ') { i++; continue }
+                    var j = i
+                    while (j < text.length && text[j] != ' ') j++
+                    atoms.add(
+                        WordAtom(
+                            word = text.substring(i, j),
+                            blockId = span.blockId,
+                            blockStart = span.start + i,
+                            blockEnd = span.start + j,
+                        ),
+                    )
+                    i = j
+                }
             }
         }
         flush()
@@ -267,7 +328,7 @@ class PassageActivity : AppCompatActivity() {
             }
 
             override fun onLongPress(e: MotionEvent) {
-                openVerseCommentary(e.x, e.y)
+                openWordStudy(e.x, e.y)
             }
 
             override fun onFling(

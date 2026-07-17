@@ -253,21 +253,6 @@ class ReaderTypography(context: Context) {
         layout(text, passageHeading, width, Layout.Alignment.ALIGN_CENTER)
 
     /**
-     * The verse key covering character [offset] in [atoms]' rendered body — the
-     * key of the most recent [NumberAtom] at or before that character. Uses the
-     * exact char [Mark]s [build] laid down, so a press hit-tested against the drawn
-     * [StaticLayout] maps back to the verse it fell in. Null if none precedes it.
-     */
-    fun verseKeyAtOffset(atoms: List<Atom>, offset: Int): Int? {
-        var key: Int? = null
-        for (m in build(atoms).marks) {
-            if (m.start > offset) break
-            if (m.atom is NumberAtom) key = m.atom.verseKey
-        }
-        return key
-    }
-
-    /**
      * The id of the footnote whose caller sits at character [offset], or null. A
      * small char slop absorbs imprecise taps on the tiny superscript caller.
      */
@@ -287,6 +272,21 @@ class ReaderTypography(context: Context) {
     fun xrefAtOffset(atoms: List<Atom>, offset: Int): Pair<Int, Int>? {
         for (x in build(atoms).xrefs) {
             if (offset in x.start until x.end) return x.targetStartKey to x.targetEndKey
+        }
+        return null
+    }
+
+    /**
+     * The scripture word drawn at character [offset], or null if the press landed on
+     * whitespace, a verse number, a heading or a footnote caller. Unlike
+     * [wordAtOffset] this does **not** fall back to the nearest word: a long-press
+     * that hits no word does nothing rather than opening a panel about a word the
+     * reader wasn't pressing.
+     */
+    fun wordAtomAtOffset(atoms: List<Atom>, offset: Int): WordAtom? {
+        for (m in build(atoms).marks) {
+            if (m.start > offset) break
+            if (m.atom is WordAtom && offset in m.start until m.end) return m.atom
         }
         return null
     }

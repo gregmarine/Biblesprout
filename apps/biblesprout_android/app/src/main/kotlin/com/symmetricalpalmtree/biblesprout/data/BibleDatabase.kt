@@ -69,6 +69,44 @@ data class Xref(
 )
 
 /**
+ * An original-language word behind the translation (the `.bible` word layer, v3).
+ * [start] until [end] are char offsets into block [blockId]'s content — the span of
+ * *English* this word was rendered as, which may be several English words ("In the
+ * beginning") or, for a word the BSB leaves untranslated, none at all (those rows
+ * are not returned by [wordsForChapter], having no place in the text to press).
+ *
+ * [original] is the inflected form as it stands in the verse; [strongs] joins
+ * [LexiconDatabase] for the dictionary entry behind it.
+ */
+data class BibleWord(
+    val verseKey: Int,
+    val blockId: Int,
+    val start: Int,
+    val end: Int,
+    /** The English this word was rendered as — the text of its own span. */
+    val english: String,
+    val strongs: String?,
+    val original: String?,
+    val translit: String?,
+    val language: String?,
+    val morphText: String?,
+)
+
+/** A run of one verse's text inside a block: [text] sits at [start] in block [blockId]. */
+data class VerseSpan(val blockId: Int, val start: Int, val text: String)
+
+/**
+ * One verse addressed by the display layer: its text as the [spans] it occupies
+ * across blocks (a verse continued on the next poetry line has more than one).
+ * Carrying the block address is what lets a view outside the chapter reader — the
+ * passage view — reach the word layer, which is keyed by exactly that address.
+ */
+data class VerseSlice(val verseKey: Int, val spans: List<VerseSpan>) {
+    /** The verse's display text, blocks rejoined with a space, as `verse.text` reads. */
+    val text: String get() = spans.joinToString(" ") { it.text.trim() }.trim()
+}
+
+/**
  * Read-only accessor for a Bible source database (`*.bible`). Opens the prebuilt
  * file plaintext through SQLCipher (its bundled SQLite has the FTS5 the reader's
  * search needs), rebuilds the in-memory [Bible] the reader consumes, and exposes
@@ -272,6 +310,124 @@ class BibleDatabase private constructor(
         return out
     }
 
+    /** Whether this source carries the word layer (schema v3+); older builds lack it. */
+    private val hasWords: Boolean by lazy {
+        db.rawQuery(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='word'",
+            null,
+        ).use { it.moveToNext() }
+    }
+
+    /**
+     * The chapter's original-language words that are visible in the text, each
+     * carrying the block span of the English it was rendered as — what a long-press
+     * hit-tests against. Words with no English rendering are skipped (nothing to
+     * press). Empty for sources without the word layer.
+     */
+    fun wordsForChapter(usfm: String, chapter: Int): List<BibleWord> {
+        if (!hasWords) return emptyList()
+        val out = ArrayList<BibleWord>()
+        db.rawQuery(
+            """
+            SELECT w.verse_key, w.block_id, w.start, w.end,
+                   substr(b.content, w.start + 1, w.end - w.start) AS english,
+                   w.strongs, f.original, f.translit, f.language, m.text
+            FROM word w
+              JOIN block b ON b.id = w.block_id
+              LEFT JOIN form f ON f.id = w.form_id
+              LEFT JOIN morphology m ON m.id = w.morph_id
+            WHERE b.usfm = ? AND b.chapter = ? AND w.block_id IS NOT NULL
+            ORDER BY w.block_id, w.start
+            """.trimIndent(),
+            arrayOf(usfm, chapter.toString()),
+        ).use { c -> while (c.moveToNext()) out.add(c.toWord()) }
+        return out
+    }
+
+    private fun Cursor.toWord(): BibleWord = BibleWord(
+        verseKey = getInt(0),
+        blockId = getInt(1),
+        start = getInt(2),
+        end = getInt(3),
+        english = getString(4),
+        strongs = getStringOrNull(5),
+        original = getStringOrNull(6),
+        translit = getStringOrNull(7),
+        language = getStringOrNull(8),
+        morphText = getStringOrNull(9),
+    )
+
+    /**
+     * The verses in an inclusive key range, each carrying the block spans its text
+     * occupies — the display-layer equivalent of [versesInRange], for views that
+     * need to reach the word layer (which is addressed by block + offset).
+     *
+     * Walks each touched chapter's blocks in document order, mirroring how the
+     * builder assigns text to verses: a `\v` marker moves the current verse **in
+     * every block kind**, but only body prose contributes text. That distinction
+     * matters for psalms — the superscription is a `\d` block holding verse 1's
+     * marker, and its text is deliberately absent from `verse.text`; skipping the
+     * block wholesale would leave the following poetry line attributed to the last
+     * verse of the previous psalm.
+     */
+    fun verseSlicesForRange(startKey: Int, endKey: Int): List<VerseSlice> {
+        val chapters = ArrayList<Pair<String, Int>>()
+        // Keys are app-controlled integers, so inlining them is injection-safe.
+        db.rawQuery(
+            "SELECT DISTINCT usfm, chapter FROM verse " +
+                "WHERE verse_key BETWEEN $startKey AND $endKey ORDER BY verse_key",
+            null,
+        ).use { c -> while (c.moveToNext()) chapters.add(c.getString(0) to c.getInt(1)) }
+
+        val spans = LinkedHashMap<Int, MutableList<VerseSpan>>()
+        for ((usfm, chapter) in chapters) {
+            var current: Int? = null
+            for (block in blocksForChapter(usfm, chapter)) {
+                val isBody = block.kind in BODY_KINDS
+                val content = block.content
+                var pos = 0
+
+                fun take(end: Int) {
+                    val key = current ?: return
+                    if (!isBody || end <= pos) return
+                    if (key !in startKey..endKey) return
+                    val text = content.substring(pos, end)
+                    if (text.isBlank()) return
+                    spans.getOrPut(key) { ArrayList() }.add(VerseSpan(block.id, pos, text))
+                }
+
+                for (mark in block.verses) {
+                    take(mark.start)
+                    current = mark.verseKey
+                    pos = mark.end
+                }
+                take(content.length)
+            }
+        }
+        return spans.map { (key, list) -> VerseSlice(key, list) }.sortedBy { it.verseKey }
+    }
+
+    /** The word layer over an inclusive key range — see [wordsForChapter]. */
+    fun wordsForRange(startKey: Int, endKey: Int): List<BibleWord> {
+        if (!hasWords) return emptyList()
+        val out = ArrayList<BibleWord>()
+        db.rawQuery(
+            """
+            SELECT w.verse_key, w.block_id, w.start, w.end,
+                   substr(b.content, w.start + 1, w.end - w.start) AS english,
+                   w.strongs, f.original, f.translit, f.language, m.text
+            FROM word w
+              JOIN block b ON b.id = w.block_id
+              LEFT JOIN form f ON f.id = w.form_id
+              LEFT JOIN morphology m ON m.id = w.morph_id
+            WHERE w.verse_key BETWEEN $startKey AND $endKey AND w.block_id IS NOT NULL
+            ORDER BY w.block_id, w.start
+            """.trimIndent(),
+            null,
+        ).use { c -> while (c.moveToNext()) out.add(c.toWord()) }
+        return out
+    }
+
     /** All verses inside an inclusive key range, in reading order. */
     fun versesInRange(startKey: Int, endKey: Int): List<VerseHit> {
         val out = ArrayList<VerseHit>()
@@ -306,6 +462,16 @@ class BibleDatabase private constructor(
             val db = SQLiteDatabase.openOrCreateDatabase(path, "", null, null)
             return BibleDatabase(db, readMetadata(db))
         }
+
+        /**
+         * Block kinds whose text is scripture prose belonging to a verse — the same
+         * set `build_bible_db.py` uses to decide what reaches `verse.text`. Headings,
+         * psalm superscriptions (`d`) and stanza breaks (`b`) are excluded.
+         */
+        private val BODY_KINDS = setOf(
+            "p", "pmo", "pc", "pi", "pm", "mi", "nb",
+            "q1", "q2", "q3", "qr", "qc", "li1", "li2", "li3",
+        )
     }
 }
 

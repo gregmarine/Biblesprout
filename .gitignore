@@ -126,12 +126,16 @@ app.*.symbols
 *.iml
 
 # --- Bundled scripture & commentary content (NOT tracked in git) --------------
-# The Bible/commentary source text and the built read-only .bible/.commentary
-# DBs are large and re-derivable, so they're kept out of the repo and restored
-# or rebuilt locally (see data/tools/). Re-download sources from:
+# The Bible/commentary/lexicon source text and the built read-only .bible/
+# .commentary/.lexicon DBs are large and re-derivable, so they're kept out of the
+# repo and restored or rebuilt locally (see data/tools/). Re-download sources from:
 #   BSB USFM      https://bereanbible.com/bsb_usfm.zip
+#   BSB tables    https://bereanbible.com/bsb_tables.tsv
 #   commentaries  https://ccel.org (Matthew Henry, Jamieson-Fausset-Brown; ThML)
+#   Strong's      https://github.com/openscriptures/HebrewLexicon (HebrewStrong.xml)
+#                 https://github.com/openscriptures/strongs (StrongsGreekDictionaryXML_1.4.zip)
 /data/bible/
 /data/commentaries/
+/data/lexicons/
 /apps/biblesprout_flutter/assets/bible/
 /apps/biblesprout_flutter/assets/commentaries/

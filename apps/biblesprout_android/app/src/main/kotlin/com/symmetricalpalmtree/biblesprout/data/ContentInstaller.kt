@@ -21,19 +21,40 @@ class ContentInstaller(private val context: Context) {
 
     /**
      * Ensures [assetPath] (e.g. `content/bsb.bible`) is present in [contentDir]
-     * as [destName], copying it if missing or if the installed size differs from
-     * the bundled asset. Returns the installed file.
+     * as [destName], copying it if missing or if the bundled asset has changed
+     * since the installed copy was written. Returns the installed file.
      */
     fun ensureInstalled(assetPath: String, destName: String): File {
         val dest = File(contentDir, destName)
-        val assetSize = bundledSize(assetPath)
-        if (dest.exists() && (assetSize < 0 || dest.length() == assetSize)) {
-            return dest
-        }
+        val stampFile = File(contentDir, "$destName.stamp")
+        val stamp = bundledStamp(assetPath)
+        val installed = runCatching { stampFile.readText() }.getOrNull()
+        if (dest.exists() && installed == stamp) return dest
+
         context.assets.open(assetPath).use { input ->
             dest.outputStream().use { output -> input.copyTo(output) }
         }
+        runCatching { stampFile.writeText(stamp) }
         return dest
+    }
+
+    /**
+     * Identity of the bundled asset: when this APK was installed, plus the asset's
+     * size.
+     *
+     * Size alone is **not** enough. Rebuilding a database can change its contents
+     * without changing its length — SQLite pads to whole pages, so a fix worth a
+     * few dozen characters lands on exactly the same byte count — and the stale
+     * copy then survives on device, silently serving old content. The install time
+     * changes on every update, which is the only way bundled content can change.
+     */
+    private fun bundledStamp(assetPath: String): String {
+        val updated = try {
+            context.packageManager.getPackageInfo(context.packageName, 0).lastUpdateTime
+        } catch (_: Exception) {
+            0L
+        }
+        return "$updated:${bundledSize(assetPath)}"
     }
 
     /** Uncompressed size of a bundled asset, or -1 if it can't be determined. */

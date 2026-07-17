@@ -198,6 +198,15 @@ class PassageActivity : AppCompatActivity() {
                 } else {
                     { CommentaryLauncher.openVerse(this@PassageActivity, word.verseKey) }
                 },
+                onConcordance = word.strongs?.let { strongs ->
+                    {
+                        startActivity(
+                            ConcordanceActivity.intent(
+                                this@PassageActivity, strongs, entry?.lemma,
+                            ),
+                        )
+                    }
+                },
             )
         }
     }

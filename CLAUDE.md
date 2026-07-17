@@ -147,10 +147,18 @@ English one original word became ("In the beginning"), not just the word pressed
 **no decoration** — the affordance is invisible until asked for, which is what keeps the page
 looking like print (see `docs/eink-constraints.md`).
 
-`WordPopup` **must** pin `textDirection = TEXT_DIRECTION_LTR` and wrap Hebrew/Aramaic runs in
-`BidiFormatter.unicodeWrap` (`bidi()`). Without both, Android reads the line's first strong
-character, lays the whole paragraph out RTL, and drags neighbouring punctuation to the wrong end
-("ray-sheeth'" renders as "('ray-sheeth").
+Tapping the panel's **Strong's number** opens `ConcordanceActivity` — every verse using that
+number (`BibleDatabase.concordance()`, indexed on `word.strongs`), rows opening the reader on that
+verse's page like a search result. The list is **capped at 300**: the median number occurs in 3
+verses but the Greek article reaches ~7,000, so the header says "First 300 of 6,978 verses" rather
+than quietly truncating. It and Find share `VerseListPager` over `view_verse_list.xml` (pages of
+fixed-height rows — a page turn is one e-ink refresh where a scroll is a smear of them).
+
+**Any UI quoting Hebrew must both** pin `textDirection` to LTR *and* wrap the RTL run in
+`isolateRtl()` (`ui/Rtl.kt`). With neither, Android reads the line's first strong character, lays
+the whole paragraph out RTL, and drags neighbouring punctuation to the wrong end — "ray-sheeth'"
+renders as "('ray-sheeth", and a "רֵאשִׁית · H7225" title flips. `WordPopup` and the concordance
+title both do this.
 
 The **passage view** long-presses the same way: `BibleDatabase.verseSlicesForRange()` returns each
 verse as the block spans its text occupies, so `PassageActivity.buildBlocks` tokenizes words that

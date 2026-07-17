@@ -49,6 +49,15 @@
     <string name="word_strongs">STRONG\'S</string>
     <string name="word_no_lexicon">No dictionary is installed for this word.</string>
     <string name="commentary_on_verse">Commentary on this verse</string>
+    <!-- %1$d = verse count -->
+    <plurals name="concordance_verses">
+        <item quantity="one">%1$d verse</item>
+        <item quantity="other">%1$d verses</item>
+    </plurals>
+    <!-- %1$d = shown, %2$d = total; a few Strong's numbers run to thousands of verses -->
+    <string name="concordance_capped">First %1$d of %2$d verses</string>
+    <!-- %1$s = the Strong's number -->
+    <string name="concordance_none">No verses use %1$s.</string>
 
     <!-- Bookmarks -->
     <string name="bookmarks">Bookmarks</string>

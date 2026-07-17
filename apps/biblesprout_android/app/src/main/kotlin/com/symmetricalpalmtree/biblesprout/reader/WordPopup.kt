@@ -2,6 +2,7 @@ package com.symmetricalpalmtree.biblesprout.reader
 
 import android.app.Dialog
 import android.graphics.Color
+import android.graphics.Paint
 import android.graphics.Typeface
 import android.graphics.drawable.ColorDrawable
 import android.graphics.drawable.GradientDrawable
@@ -16,12 +17,12 @@ import android.widget.ScrollView
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
-import androidx.core.text.BidiFormatter
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import com.symmetricalpalmtree.biblesprout.R
 import com.symmetricalpalmtree.biblesprout.data.BibleWord
 import com.symmetricalpalmtree.biblesprout.data.LexiconEntry
+import com.symmetricalpalmtree.biblesprout.ui.isolateRtl
 
 /**
  * Shows the original-language word behind a pressed English word — its form,
@@ -35,23 +36,12 @@ import com.symmetricalpalmtree.biblesprout.data.LexiconEntry
  */
 object WordPopup {
 
-    /**
-     * Isolates a right-to-left run (Hebrew, Aramaic) inside this LTR panel.
-     *
-     * Without it Android's bidi algorithm reads the first strong character of the
-     * line — the Hebrew — and lays the whole paragraph out right-to-left, so the
-     * line hugs the right edge and neighbouring punctuation drifts to the wrong end
-     * ("ray-sheeth'" renders as "('ray-sheeth"). Wrapping marks the run's direction
-     * explicitly so the Hebrew reads RTL *within* a line that stays LTR.
-     */
-    private fun bidi(text: String): CharSequence =
-        BidiFormatter.getInstance().unicodeWrap(text)
-
     fun show(
         activity: AppCompatActivity,
         word: BibleWord,
         entry: LexiconEntry?,
         onCommentary: (() -> Unit)? = null,
+        onConcordance: (() -> Unit)? = null,
     ) {
         val black = ContextCompat.getColor(activity, R.color.eink_black)
         val white = ContextCompat.getColor(activity, R.color.eink_white)
@@ -105,7 +95,7 @@ object WordPopup {
             if (original != null) {
                 addView(
                     TextView(activity).apply {
-                        text = listOfNotNull(bidi(original), word.translit)
+                        text = listOfNotNull(isolateRtl(original), word.translit)
                             .joinToString("  ·  ")
                         textSize = 19f
                         setTextColor(black)
@@ -127,7 +117,7 @@ object WordPopup {
                 // Headword + pronunciation: the dictionary's citation form, which is
                 // usually not the form printed above.
                 val head = listOfNotNull(
-                    entry.lemma?.let { bidi(it) },
+                    entry.lemma?.let { isolateRtl(it) },
                     entry.pronounce?.let { "($it)" },
                 ).joinToString(" ")
                 if (head.isNotBlank()) {
@@ -153,16 +143,29 @@ object WordPopup {
             setPadding(0, 0, 0, dp(12))
         }
 
-        // Strong's number sits at the foot of the details as the entry's identity.
-        word.strongs?.let {
+        // Strong's number sits at the foot of the details as the entry's identity —
+        // and is the way into the concordance, underlined so it reads as a link.
+        word.strongs?.let { strongs ->
             details.addView(label(activity.getString(R.string.word_strongs)))
-            details.addView(body(it))
+            details.addView(
+                body(strongs).apply {
+                    if (onConcordance == null) return@apply
+                    paintFlags = paintFlags or Paint.UNDERLINE_TEXT_FLAG
+                    // Padded to a real touch target: the number itself is a short
+                    // string, and this is a finger on e-ink (docs/eink-constraints.md).
+                    setPadding(dp(20), dp(4), dp(20), dp(14))
+                    setOnClickListener {
+                        dialog?.dismiss()
+                        onConcordance()
+                    }
+                },
+            )
         }
 
         val panel = LinearLayout(activity).apply {
             orientation = LinearLayout.VERTICAL
             // The panel is English chrome that quotes Hebrew/Greek, so pin it LTR and
-            // let bidi() isolate the RTL runs. Children inherit this by default.
+            // let isolateRtl() mark the RTL runs. Children inherit this by default.
             textDirection = View.TEXT_DIRECTION_LTR
             background = GradientDrawable().apply {
                 setColor(white)

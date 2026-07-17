@@ -41,6 +41,10 @@
             android:exported="false" />
 
         <activity
+            android:name=".ui.ConcordanceActivity"
+            android:exported="false" />
+
+        <activity
             android:name=".ui.BookmarksActivity"
             android:exported="false" />
 

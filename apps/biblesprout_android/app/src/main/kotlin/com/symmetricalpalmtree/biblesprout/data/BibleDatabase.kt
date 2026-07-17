@@ -92,6 +92,16 @@ data class BibleWord(
     val morphText: String?,
 )
 
+/**
+ * Every verse using one Strong's number. [totalVerses] is the true count; [hits] is
+ * capped (see [BibleDatabase.concordance]) because a few numbers — the Greek article,
+ * the Hebrew direct-object marker — run to thousands of verses.
+ */
+data class Concordance(val strongs: String, val totalVerses: Int, val hits: List<VerseHit>) {
+    /** Whether [hits] is a truncated view of [totalVerses]. */
+    val isCapped: Boolean get() = hits.size < totalVerses
+}
+
 /** A run of one verse's text inside a block: [text] sits at [start] in block [blockId]. */
 data class VerseSpan(val blockId: Int, val start: Int, val text: String)
 
@@ -405,6 +415,37 @@ class BibleDatabase private constructor(
             }
         }
         return spans.map { (key, list) -> VerseSlice(key, list) }.sortedBy { it.verseKey }
+    }
+
+    /**
+     * Every verse whose original text uses [strongs], in reading order — the reverse
+     * concordance behind a tapped Strong's number. A verse using the word more than
+     * once appears once.
+     *
+     * [limit] caps the list: most numbers occur in a handful of verses (the median is
+     * 3), but the Greek article reaches ~7,000, which is neither readable nor worth
+     * paginating. [Concordance.totalVerses] always reports the true count so the
+     * screen can say the list is partial rather than quietly lying.
+     */
+    fun concordance(strongs: String, limit: Int = 300): Concordance {
+        if (!hasWords) return Concordance(strongs, 0, emptyList())
+        val total = db.rawQuery(
+            "SELECT COUNT(DISTINCT verse_key) FROM word WHERE strongs = ?",
+            arrayOf(strongs),
+        ).use { if (it.moveToNext()) it.getInt(0) else 0 }
+
+        val out = ArrayList<VerseHit>()
+        db.rawQuery(
+            """
+            SELECT v.verse_key, v.usfm, v.chapter, v.verse, v.text
+            FROM verse v
+            WHERE v.verse_key IN (SELECT DISTINCT verse_key FROM word WHERE strongs = ?)
+            ORDER BY v.verse_key
+            LIMIT $limit
+            """.trimIndent(),
+            arrayOf(strongs),
+        ).use { c -> while (c.moveToNext()) out.add(c.toHit()) }
+        return Concordance(strongs, total, out)
     }
 
     /** The word layer over an inclusive key range — see [wordsForChapter]. */

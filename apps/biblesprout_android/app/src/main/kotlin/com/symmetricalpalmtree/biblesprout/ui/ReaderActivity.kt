@@ -631,6 +631,15 @@ class ReaderActivity : AppCompatActivity() {
                 } else {
                     { CommentaryLauncher.openVerse(this@ReaderActivity, word.verseKey) }
                 },
+                onConcordance = word.strongs?.let { strongs ->
+                    {
+                        startActivity(
+                            ConcordanceActivity.intent(
+                                this@ReaderActivity, strongs, entry?.lemma,
+                            ),
+                        )
+                    }
+                },
             )
         }
     }

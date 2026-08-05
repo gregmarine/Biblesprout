@@ -200,6 +200,19 @@ Consume the prebuilt read-only DBs in `../../data/` (`bible/bsb.bible`,
 
 ## Build / run
 
-See the root `CLAUDE.md` for the full build/install/launch recipe and BOOX gotchas (notably:
-`am start` is broken here — launch with `monkey`; a fresh install needs a one-time
-`pm enable`). E-ink UI rules that apply here too live in `../../docs/eink-constraints.md`.
+Two build types, matching Notesprout and Paintsprout:
+
+| | application id | launcher name | signing |
+|---|---|---|---|
+| **debug** (default) | `com.symmetricalpalmtree.biblesprout.dev` | Biblesprout Dev | debug keystore, by Gradle |
+| **release** | `com.symmetricalpalmtree.biblesprout` | Biblesprout | debug keystore, by `apksigner` after `assembleRelease` |
+
+They install side by side and share no state — `biblesprout.db` and the `files/content/` copy of
+the bundled DBs are both per-application-id, so a dev build under test can neither read nor
+overwrite the bookmarks, highlights and notes in a stable install. `app/src/debug/res/values/
+strings.xml` is the whole of the launcher-name mechanism.
+
+See the `device-build-install` skill for the exact commands, device serials and the
+per-id storage cost, and the root `CLAUDE.md` for BOOX gotchas (notably: `am start` is broken
+here — launch with `monkey`; a fresh install needs a one-time `pm enable`). E-ink UI rules that
+apply here too live in `../../docs/eink-constraints.md`.

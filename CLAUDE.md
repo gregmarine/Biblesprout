@@ -187,8 +187,19 @@ SQLite pads to whole pages, so rebuilding a DB with a small fix lands on the ide
 and the old copy silently survives on device. If a `data/` rebuild seems not to reach the BOOX,
 that's the first thing to suspect (`adb shell run-as <pkg> ls -l files/content/`).
 
-`applicationId` is `com.symmetricalpalmtree.biblesprout` (replaces the Flutter app); the
-**debug** build appends `.dev`. The whole app runs full-screen immersive
+**Two builds, same as Notesprout and Paintsprout.** *Debug* is `…biblesprout.dev`, labelled
+**"Biblesprout Dev"** (`app/src/debug/res/values/strings.xml` overrides `app_name` for that build
+type — the `.dev` id is invisible on the home screen, and two identical icons is the failure this
+prevents). *Release* is `com.symmetricalpalmtree.biblesprout`, labelled **"Biblesprout"**. They
+install side by side and share nothing: `biblesprout.db` (position, bookmarks, highlights, notes)
+and the installed content copy are both per-application-id. **Debug is the default** — build and
+install release only when asked. Neither variant has a `signingConfig`; release is signed after
+the fact with the **debug keystore** (sideload-only, not a Play identity). The release id is the
+one the frozen Flutter app used, so on a device still holding that APK `install -r` fails on a
+signature mismatch and needs an uninstall first. Full recipe, serials and the per-id storage
+arithmetic: the **`device-build-install` skill**.
+
+The whole app runs full-screen immersive
 (`WindowInsetsControllerCompat.hide(systemBars)`), so there is no system Back — every screen
 must carry its own on-screen back control (carry this constraint forward from Flutter).
 
@@ -202,8 +213,15 @@ adb -s DAF86F61 install -r app/build/outputs/apk/debug/app-debug.apk
 adb -s DAF86F61 shell pm enable com.symmetricalpalmtree.biblesprout.dev
 adb -s DAF86F61 shell monkey -p com.symmetricalpalmtree.biblesprout.dev 1   # launch
 ```
+Release is the same shape one step longer — `./gradlew assembleRelease` emits
+`app-release-unsigned.apk`, which `apksigner` signs with the debug keystore before `install -r`
+(the `device-build-install` skill has the exact command). Both APKs are large: **debug ~227 MB,
+release ~166 MB**, since the content DBs are bundled uncompressed, and each id then keeps its own
+~137 MB copy under `files/content/` — both variants installed is ~0.75 GB on the device.
 - `am start -n <pkg>/<cls>` fails with a **bogus "class does not exist"** on this BOOX (same
-  quirk the Flutter app hit) — use `monkey` to launch, never `am start`.
+  quirk the Flutter app hit) — use `monkey` to launch, never `am start`. Only the *application
+  id* is suffixed, not the namespace, so the class is `…biblesprout.MainActivity` in both
+  variants (never `…biblesprout.dev.MainActivity`).
 - Fresh installs need the one-time `pm enable <pkg>` above or `monkey`/`am` report "No
   activities found to run". Component-level `pm enable <pkg>/<cls>` throws SecurityException
   (shell can't set component state) — the package-level enable is what's needed.

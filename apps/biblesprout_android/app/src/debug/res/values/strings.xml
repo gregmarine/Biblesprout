@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    The debug build's launcher name. Overrides the value in `main` for this build
+    type only, which is the whole of the mechanism — same as Notesprout and
+    Paintsprout.
+
+    It exists because the `.dev` application id is invisible on the home screen:
+    two identical icons both reading "Biblesprout", one holding real bookmarks,
+    notes and highlights, one holding whatever is being tested. The id keeps them
+    apart on disk; this keeps them apart to a person looking at the device.
+-->
+<resources>
+    <string name="app_name">Biblesprout Dev</string>
+</resources>

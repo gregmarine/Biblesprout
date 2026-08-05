@@ -125,6 +125,11 @@ app.*.symbols
 .idea/
 *.iml
 
+# Claude Code — share the skills, keep local settings/state out (same as Notesprout).
+.claude/*
+!.claude/skills/
+!.claude/skills/**
+
 # --- Bundled scripture & commentary content (NOT tracked in git) --------------
 # The Bible/commentary/lexicon source text and the built read-only .bible/
 # .commentary/.lexicon DBs are large and re-derivable, so they're kept out of the
